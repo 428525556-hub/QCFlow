@@ -1,20 +1,21 @@
 import { supabase } from "@/src/api/client";
-import { STORAGE_BUCKETS } from "@/src/constants";
-import { getOrderById, getOrderItems } from "@/src/api/ordersApi";
+import { apiRequest } from "@/src/api/httpClient";
 import { getOrderAttachments } from "@/src/api/orderAttachmentsApi";
-import type { Database, InspectionStage } from "@/src/types";
+import { getOrderById, getOrderItems } from "@/src/api/ordersApi";
+import { STORAGE_BUCKETS } from "@/src/constants";
+import type { Database, InspectionRecord, InspectionStage, ReinspectionRecord } from "@/src/types";
 
 type InspectionRecordInsert = Database["public"]["Tables"]["inspection_records"]["Insert"];
 type ReinspectionRecordInsert = Database["public"]["Tables"]["reinspection_records"]["Insert"];
 
 export async function getInspectionRecords(orderId: string, stage?: InspectionStage, ascending = false) {
-  let query = supabase.from("inspection_records").select("*").eq("order_id", orderId).order("created_at", { ascending });
-  if (stage) query = query.eq("inspection_stage", stage);
-  return query;
+  const query = new URLSearchParams({ orderId, ascending: String(ascending) });
+  if (stage) query.set("stage", stage);
+  return apiRequest<InspectionRecord[]>(`/api/inspections?${query.toString()}`);
 }
 
 export async function insertInspectionRecord(record: InspectionRecordInsert) {
-  return supabase.from("inspection_records").insert(record).select("*").single();
+  return apiRequest<InspectionRecord>("/api/inspections", { method: "POST", body: JSON.stringify(record) });
 }
 
 export async function getInspectionWorkspaceData(orderId: string, stage: InspectionStage) {
@@ -48,11 +49,12 @@ export function getInspectionPhotoPublicUrl(path: string) {
 }
 
 export async function getReinspectionRecords(orderId: string, ascending = false) {
-  return supabase.from("reinspection_records").select("*").eq("order_id", orderId).order("created_at", { ascending });
+  const query = new URLSearchParams({ orderId, ascending: String(ascending) });
+  return apiRequest<ReinspectionRecord[]>(`/api/reinspections?${query.toString()}`);
 }
 
 export async function insertReinspectionRecord(record: ReinspectionRecordInsert) {
-  return supabase.from("reinspection_records").insert(record).select("*").single();
+  return apiRequest<ReinspectionRecord>("/api/reinspections", { method: "POST", body: JSON.stringify(record) });
 }
 
 export async function getReinspectionPageData(orderId: string) {
@@ -63,11 +65,7 @@ export async function getReinspectionPageData(orderId: string) {
   ]);
 
   return {
-    data: {
-      order: orderResult.data,
-      records: recordsResult.data ?? [],
-      reinspections: reinspectionsResult.data ?? []
-    },
+    data: { order: orderResult.data, records: recordsResult.data ?? [], reinspections: reinspectionsResult.data ?? [] },
     error: orderResult.error ?? recordsResult.error ?? reinspectionsResult.error
   };
 }
@@ -80,11 +78,7 @@ export async function getReportPageData(orderId: string) {
   ]);
 
   return {
-    data: {
-      order: orderResult.data,
-      records: recordsResult.data ?? [],
-      reinspections: reinspectionsResult.data ?? []
-    },
+    data: { order: orderResult.data, records: recordsResult.data ?? [], reinspections: reinspectionsResult.data ?? [] },
     error: orderResult.error ?? recordsResult.error ?? reinspectionsResult.error
   };
 }

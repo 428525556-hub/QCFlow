@@ -1,3 +1,5 @@
+export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[];
+
 export type OrderStatus = "未开始" | "检品中" | "已完成";
 
 export type InspectionStage = "normal" | "xray";
@@ -254,7 +256,12 @@ export type Database = {
       };
     };
     Views: Record<string, never>;
-    Functions: Record<string, never>;
+    Functions: {
+      create_order_with_items: {
+        Args: { order_payload: Json; item_payload: Json };
+        Returns: string;
+      };
+    };
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;
   };

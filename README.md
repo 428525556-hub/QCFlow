@@ -109,6 +109,10 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=
 - Supabase Storage bucket 已创建
 - 本地 `pnpm build` 通过
 
+## 后端 API
+
+业务数据正在逐步迁移到 Next.js Route Handlers。接口鉴权、统一响应、请求 ID、结构化日志、异常处理和事务说明见 `docs/API.md`。
+
 ## 当前工程化状态
 
 - 页面和组件层已经不直接调用 Supabase。
