@@ -1,0 +1,52 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: #eff6ff;
+  color: #0f172a;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+button {
+  touch-action: manipulation;
+}
+
+.field {
+  @apply w-full rounded border border-line bg-white px-3 py-3 text-base outline-none transition focus:border-machine focus:ring-2 focus:ring-blue-100;
+}
+
+.label {
+  @apply text-sm font-bold text-slate-700;
+}
+
+.primary-btn {
+  @apply inline-flex min-h-11 items-center justify-center gap-2 rounded bg-machine px-4 py-3 text-sm font-black text-white shadow-panel transition active:scale-[0.99] disabled:cursor-not-allowed disabled:bg-slate-400;
+}
+
+.secondary-btn {
+  @apply inline-flex min-h-11 items-center justify-center gap-2 rounded border border-line bg-white px-4 py-3 text-sm font-bold text-slate-800 shadow-panel transition active:scale-[0.99] disabled:cursor-not-allowed disabled:text-slate-400;
+}
+
+.panel {
+  @apply rounded border border-line bg-white/95 shadow-panel;
+}
