@@ -265,8 +265,8 @@ export function InspectionWorkspace({ orderId, stage, title, subtitle, groups }:
   }
 
   return (
-    <div className="mx-auto max-w-3xl space-y-4 pb-28 md:pb-4">
-      <section className="rounded border border-blue-900 bg-blue-950 p-4 text-white">
+    <div className="inspection-workspace mx-auto max-w-3xl space-y-4 pb-28 md:pb-4">
+      <section className="inspection-summary rounded border border-blue-900 bg-blue-950 p-4 text-white">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="text-sm font-bold text-sky-300">{title}</p>
@@ -286,7 +286,7 @@ export function InspectionWorkspace({ orderId, stage, title, subtitle, groups }:
         </div>
       </section>
 
-      <section className="rounded border border-blue-200 bg-blue-50 p-3">
+      <section className="inspection-notice rounded border border-blue-200 bg-blue-50 p-3">
         <div className="flex flex-wrap items-center gap-2">
           <span className="rounded bg-white px-2 py-1 text-xs font-black text-blue-800">检品类型：{planLabel(order.inspection_plan)}</span>
           {stageMismatch(order.inspection_plan, stage) && (
@@ -300,7 +300,7 @@ export function InspectionWorkspace({ orderId, stage, title, subtitle, groups }:
         )}
       </section>
 
-      <section className="panel p-4">
+      <section className="inspection-instructions panel p-4">
         <div className="mb-3 flex items-center justify-between gap-3">
           <div>
             <h2 className="text-lg font-black">检品指示书</h2>
@@ -366,8 +366,8 @@ export function InspectionWorkspace({ orderId, stage, title, subtitle, groups }:
         )}
       </section>
 
-      <form onSubmit={submit} className="panel space-y-4 p-4">
-        <div>
+      <form onSubmit={submit} className="inspection-form panel space-y-4 p-4">
+        <div className="inspection-photo-panel">
           <label className="label">现场照片</label>
           <label className="mt-2 flex min-h-32 cursor-pointer flex-col items-center justify-center rounded border-2 border-dashed border-line bg-blue-50 p-3 text-center">
             {preview ? (
@@ -383,19 +383,19 @@ export function InspectionWorkspace({ orderId, stage, title, subtitle, groups }:
           </label>
         </div>
 
-        <div>
+        <div className="inspection-defect-panel">
           <label className="label">问题类别</label>
-          <div className="mt-2 space-y-3">
+          <div className="inspection-defect-groups mt-2 space-y-3">
             {groups.map((group) => (
-              <section key={group.group} className="rounded border border-line bg-blue-50 p-2">
+              <section key={group.group} className="inspection-defect-group rounded border border-line bg-blue-50 p-2">
                 <p className="mb-2 text-xs font-black text-blue-700">{group.group}</p>
-                <div className="grid grid-cols-2 gap-2 md:grid-cols-3">
+                <div className="inspection-defect-items grid grid-cols-2 gap-2 md:grid-cols-3">
                   {group.items.map((item) => (
                     <button
                       key={`${group.group}-${item}`}
                       type="button"
                       onClick={() => setDefectType(item)}
-                      className={`min-h-11 rounded border px-2 text-sm font-black ${
+                      className={`inspection-defect-button min-h-11 rounded border px-2 text-sm font-black ${
                         defectType === item ? "border-blue-500 bg-blue-600 text-white" : "border-line bg-white text-slate-600"
                       }`}
                     >
@@ -408,7 +408,7 @@ export function InspectionWorkspace({ orderId, stage, title, subtitle, groups }:
           </div>
         </div>
 
-        <div>
+        <div className="inspection-details-panel">
           <label className="label">数量</label>
           <div className="mb-3 mt-2 grid grid-cols-2 gap-3">
             <label className="space-y-1">
@@ -452,16 +452,16 @@ export function InspectionWorkspace({ orderId, stage, title, subtitle, groups }:
           </div>
         </div>
 
-        <div>
+        <div className="inspection-remark-panel">
           <label className="label" htmlFor="remark">
             备注
           </label>
           <textarea id="remark" className="field mt-2 min-h-24 resize-none" value={remark} onChange={(event) => setRemark(event.target.value)} placeholder="位置、批次、处理意见" />
         </div>
 
-        {message && <p className="rounded bg-blue-50 px-3 py-2 text-sm font-bold text-blue-800">{message}</p>}
+        {message && <p className="inspection-feedback rounded bg-blue-50 px-3 py-2 text-sm font-bold text-blue-800">{message}</p>}
         {(saving || photoProcessing) && uploadStatus && (
-          <div className="rounded border border-blue-200 bg-blue-50 px-3 py-3">
+          <div className="inspection-feedback rounded border border-blue-200 bg-blue-50 px-3 py-3">
             <div className="flex items-center justify-between gap-3 text-sm font-black text-blue-800">
               <span>{uploadStatus}</span>
               <span className="h-5 w-5 animate-spin rounded-full border-2 border-blue-200 border-t-blue-700" />
@@ -472,7 +472,7 @@ export function InspectionWorkspace({ orderId, stage, title, subtitle, groups }:
           </div>
         )}
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="inspection-actions grid grid-cols-2 gap-3">
           <button type="submit" disabled={saving || photoProcessing} className="primary-btn">
             <Save size={18} />
             保存记录
@@ -484,7 +484,7 @@ export function InspectionWorkspace({ orderId, stage, title, subtitle, groups }:
         </div>
       </form>
 
-      <section>
+      <section className="inspection-records">
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-lg font-black">最近记录</h2>
           <Link href={`/report/${orderId}`} className="inline-flex items-center gap-1 text-sm font-bold text-machine">
@@ -492,7 +492,7 @@ export function InspectionWorkspace({ orderId, stage, title, subtitle, groups }:
             报告
           </Link>
         </div>
-        <div className="space-y-3">
+        <div className="inspection-record-list space-y-3">
           {records.length === 0 && <div className="panel p-4 text-sm text-slate-500">暂无记录。</div>}
           {records.map((record) => (
             <article key={record.id} className="panel flex gap-3 p-3">

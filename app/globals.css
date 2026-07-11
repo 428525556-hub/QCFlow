@@ -50,3 +50,114 @@ button {
 .panel {
   @apply rounded border border-line bg-white/95 shadow-panel;
 }
+
+@media (min-width: 960px) and (orientation: landscape) {
+  .inspection-workspace {
+    display: flex;
+    max-width: 1440px !important;
+    flex-direction: column;
+  }
+
+  .inspection-summary {
+    order: 1;
+    padding: 1.25rem 1.5rem;
+  }
+
+  .inspection-notice {
+    order: 2;
+  }
+
+  .inspection-form {
+    order: 3;
+    display: grid;
+    grid-template-columns: minmax(260px, 0.72fr) minmax(460px, 1.45fr);
+    align-items: start;
+    gap: 1rem;
+    padding: 1.25rem;
+  }
+
+  .inspection-form > * {
+    margin-top: 0 !important;
+  }
+
+  .inspection-photo-panel,
+  .inspection-details-panel,
+  .inspection-remark-panel,
+  .inspection-feedback,
+  .inspection-actions {
+    grid-column: 1;
+  }
+
+  .inspection-photo-panel label:last-child {
+    min-height: 180px;
+  }
+
+  .inspection-defect-panel {
+    position: sticky;
+    top: 5rem;
+    grid-column: 2;
+    grid-row: 1 / span 8;
+    max-height: calc(100vh - 6rem);
+    overflow-y: auto;
+    border: 1px solid #bfdbfe;
+    border-radius: 4px;
+    background: #eff6ff;
+    padding: 0.75rem;
+  }
+
+  .inspection-defect-groups {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem;
+  }
+
+  .inspection-defect-group {
+    margin-top: 0 !important;
+    background: white;
+  }
+
+  .inspection-defect-items {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .inspection-defect-group:only-child {
+    grid-column: 1 / -1;
+  }
+
+  .inspection-defect-group:only-child .inspection-defect-items {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+
+  .inspection-defect-button {
+    min-height: 56px;
+    overflow-wrap: anywhere;
+    line-height: 1.25;
+  }
+
+  .inspection-actions button {
+    min-height: 56px;
+    font-size: 1rem;
+  }
+
+  .inspection-instructions {
+    order: 4;
+  }
+
+  .inspection-instructions article img {
+    height: 12rem;
+  }
+
+  .inspection-records {
+    order: 5;
+  }
+
+  .inspection-record-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem;
+  }
+
+  .inspection-record-list > * {
+    margin-top: 0 !important;
+  }
+}
