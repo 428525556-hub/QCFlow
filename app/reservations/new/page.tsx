@@ -4,6 +4,7 @@ import { useCurrentUser } from "@/components/AuthGuard";
 import type { InspectionPlan } from "@/lib/types";
 import { getOrderAttachmentPublicUrl, insertOrderAttachments, uploadOrderAttachment } from "@/src/api/orderAttachmentsApi";
 import { createOrder, insertOrderItems } from "@/src/api/ordersApi";
+import { insertReservationCartonPlan } from "@/src/api/shipmentApi";
 import { FileSpreadsheet, Layers3, PackageSearch, Plus, Save, Trash2, Upload } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { ChangeEvent, FormEvent, useMemo, useState } from "react";
@@ -32,6 +33,24 @@ type PurchaseOrderForm = {
   id: string;
   po_number: string;
   styles: StyleForm[];
+};
+
+type ReservationMode = "quantity" | "carton";
+
+type CartonPlanItemForm = {
+  id: string;
+  po_number: string;
+  sku: string;
+  color: string;
+  size: string;
+  quantity: string;
+};
+
+type CartonPlanGroupForm = {
+  id: string;
+  carton_start: string;
+  carton_end: string;
+  items: CartonPlanItemForm[];
 };
 
 type ReservationForm = {
@@ -64,6 +83,14 @@ function createPurchaseOrder(): PurchaseOrderForm {
   return { id: createId(), po_number: "", styles: [createStyle()] };
 }
 
+function createCartonPlanItem(): CartonPlanItemForm {
+  return { id: createId(), po_number: "", sku: "", color: "", size: "", quantity: "10" };
+}
+
+function createCartonPlanGroup(): CartonPlanGroupForm {
+  return { id: createId(), carton_start: "", carton_end: "", items: [createCartonPlanItem()] };
+}
+
 function safeFileName(name: string) {
   return name.replace(/[^\w.\-\u4e00-\u9fa5]/g, "_");
 }
@@ -88,6 +115,63 @@ function orderTotal(order: PurchaseOrderForm) {
   return order.styles.reduce((sum, style) => sum + styleTotal(style), 0);
 }
 
+function expandCartonRange(start: string, end: string) {
+  const first = start.trim();
+  const last = end.trim() || first;
+  if (!first) return [];
+  if (first === last) return [first];
+
+  const firstMatch = first.match(/^(.*?)(\d+)$/);
+  const lastMatch = last.match(/^(.*?)(\d+)$/);
+  if (!firstMatch || !lastMatch || firstMatch[1] !== lastMatch[1]) return [first, last];
+
+  const prefix = firstMatch[1];
+  const from = Number(firstMatch[2]);
+  const to = Number(lastMatch[2]);
+  if (!Number.isFinite(from) || !Number.isFinite(to) || to < from || to - from > 1000) return [first, last];
+
+  const width = Math.max(firstMatch[2].length, lastMatch[2].length);
+  return Array.from({ length: to - from + 1 }, (_, index) => `${prefix}${String(from + index).padStart(width, "0")}`);
+}
+
+function cartonGroupNos(group: CartonPlanGroupForm) {
+  return expandCartonRange(group.carton_start, group.carton_end);
+}
+
+function cartonGroupTotal(group: CartonPlanGroupForm) {
+  const oneCartonQuantity = group.items.reduce((sum, item) => sum + toNumber(item.quantity), 0);
+  return oneCartonQuantity * cartonGroupNos(group).length;
+}
+
+function summarizeCartonItems(groups: CartonPlanGroupForm[]) {
+  const summary = new Map<string, { po_number: string; sku: string; color: string; size: string; carton_count: number; quantity_per_carton: number; quantity: number }>();
+
+  for (const group of groups) {
+    const cartonCount = cartonGroupNos(group).length;
+    if (cartonCount === 0) continue;
+    for (const item of group.items) {
+      const row = {
+        po_number: item.po_number.trim(),
+        sku: item.sku.trim(),
+        color: item.color.trim() || "未定",
+        size: item.size.trim() || "未定",
+        quantity_per_carton: Number(item.quantity || 0),
+        quantity: Number(item.quantity || 0) * cartonCount
+      };
+      const key = [row.po_number, row.sku, row.color, row.size].join("||");
+      const current = summary.get(key);
+      if (current) {
+        current.carton_count += cartonCount;
+        current.quantity += row.quantity;
+      } else {
+        summary.set(key, { ...row, carton_count: cartonCount });
+      }
+    }
+  }
+
+  return Array.from(summary.values());
+}
+
 export default function NewReservationPage() {
   const user = useCurrentUser();
   const router = useRouter();
@@ -99,12 +183,47 @@ export default function NewReservationPage() {
     inspection_plan: "both",
     reservation_remark: ""
   });
+  const [reservationMode, setReservationMode] = useState<ReservationMode>("quantity");
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrderForm[]>([createPurchaseOrder()]);
+  const [cartonPlanGroups, setCartonPlanGroups] = useState<CartonPlanGroupForm[]>([createCartonPlanGroup()]);
   const [attachments, setAttachments] = useState<File[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
-  const totalQuantity = useMemo(() => purchaseOrders.reduce((sum, order) => sum + orderTotal(order), 0), [purchaseOrders]);
+  const quantityModeTotal = useMemo(() => purchaseOrders.reduce((sum, order) => sum + orderTotal(order), 0), [purchaseOrders]);
+  const cartonModeTotal = useMemo(() => cartonPlanGroups.reduce((sum, group) => sum + cartonGroupTotal(group), 0), [cartonPlanGroups]);
+  const cartonModeCount = useMemo(() => new Set(cartonPlanGroups.flatMap((group) => cartonGroupNos(group))).size, [cartonPlanGroups]);
+  const totalQuantity = reservationMode === "carton" ? cartonModeTotal : quantityModeTotal;
+
+  function updateCartonGroup(groupId: string, key: keyof Omit<CartonPlanGroupForm, "id" | "items">, value: string) {
+    setCartonPlanGroups((current) => current.map((group) => (group.id === groupId ? { ...group, [key]: value } : group)));
+  }
+
+  function addCartonGroup() {
+    setCartonPlanGroups((current) => [...current, createCartonPlanGroup()]);
+  }
+
+  function removeCartonGroup(groupId: string) {
+    setCartonPlanGroups((current) => (current.length === 1 ? current : current.filter((group) => group.id !== groupId)));
+  }
+
+  function updateCartonPlanItem(groupId: string, itemId: string, key: keyof Omit<CartonPlanItemForm, "id">, value: string) {
+    setCartonPlanGroups((current) =>
+      current.map((group) =>
+        group.id === groupId ? { ...group, items: group.items.map((item) => (item.id === itemId ? { ...item, [key]: value } : item)) } : group
+      )
+    );
+  }
+
+  function addCartonPlanItem(groupId: string) {
+    setCartonPlanGroups((current) => current.map((group) => (group.id === groupId ? { ...group, items: [...group.items, createCartonPlanItem()] } : group)));
+  }
+
+  function removeCartonPlanItem(groupId: string, itemId: string) {
+    setCartonPlanGroups((current) =>
+      current.map((group) => (group.id === groupId ? { ...group, items: group.items.length === 1 ? group.items : group.items.filter((item) => item.id !== itemId) } : group))
+    );
+  }
 
   function updatePurchaseOrder(orderId: string, value: string) {
     setPurchaseOrders((current) => current.map((order) => (order.id === orderId ? { ...order, po_number: value } : order)));
@@ -266,7 +385,7 @@ export default function NewReservationPage() {
     event.preventDefault();
     if (!user) return;
 
-    const flatItems = purchaseOrders.flatMap((order) =>
+    const quantityFlatItems = purchaseOrders.flatMap((order) =>
       order.styles.flatMap((style) =>
         style.colors.flatMap((color) =>
           color.sizes.map((size) => ({
@@ -282,7 +401,11 @@ export default function NewReservationPage() {
       )
     );
 
+    const flatItems = reservationMode === "carton" ? summarizeCartonItems(cartonPlanGroups) : quantityFlatItems;
     const hasInvalidItem = flatItems.some((item) => !item.po_number || !item.sku || item.quantity <= 0);
+    const hasInvalidCartonPlan =
+      reservationMode === "carton" &&
+      cartonPlanGroups.some((group) => cartonGroupNos(group).length === 0 || group.items.some((item) => !item.po_number.trim() || !item.sku.trim() || Number(item.quantity || 0) <= 0));
 
     if (!form.customer_name.trim() || !form.factory_name.trim()) {
       setError("请填写客户名称和工厂名称。");
@@ -291,6 +414,11 @@ export default function NewReservationPage() {
 
     if (hasInvalidItem) {
       setError("请填写订单号、货号和总双数。颜色和尺码不知道时可以先不填。");
+      return;
+    }
+
+    if (hasInvalidCartonPlan) {
+      setError("请填写箱号范围、订单号、货号和每箱数量。颜色和尺码不知道时可以先不填。");
       return;
     }
 
@@ -333,6 +461,40 @@ export default function NewReservationPage() {
       setSaving(false);
       setError(`${itemError.message}。请确认 Supabase 已执行最新 schema.sql。`);
       return;
+    }
+
+    if (reservationMode === "carton") {
+      const cartonRows = cartonPlanGroups.flatMap((group) =>
+        cartonGroupNos(group).map((cartonNo) => ({
+          id: createId(),
+          order_id: orderId,
+          user_id: user.id,
+          carton_no: cartonNo,
+          remark: null
+        }))
+      );
+      const cartonIdByNo = new Map(cartonRows.map((carton) => [carton.carton_no, carton.id]));
+      const cartonItemRows = cartonPlanGroups.flatMap((group) =>
+        cartonGroupNos(group).flatMap((cartonNo) =>
+          group.items.map((item) => ({
+            reservation_carton_id: cartonIdByNo.get(cartonNo)!,
+            order_id: orderId,
+            user_id: user.id,
+            po_number: item.po_number.trim(),
+            sku: item.sku.trim(),
+            color: item.color.trim() || "未定",
+            size: item.size.trim() || "未定",
+            quantity: Number(item.quantity || 0)
+          }))
+        )
+      );
+
+      const { error: cartonError } = await insertReservationCartonPlan(cartonRows, cartonItemRows);
+      if (cartonError) {
+        setSaving(false);
+        setError(`${cartonError.message}。请先执行最新的预约箱号数据库 SQL。`);
+        return;
+      }
     }
 
     if (attachments.length > 0) {
@@ -423,6 +585,30 @@ export default function NewReservationPage() {
           </div>
         </section>
 
+        <section className="panel space-y-3 p-4">
+          <h2 className="text-base font-black">预约方式</h2>
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              type="button"
+              onClick={() => setReservationMode("quantity")}
+              className={`min-h-12 rounded border px-3 py-2 text-sm font-black ${reservationMode === "quantity" ? "border-blue-600 bg-blue-600 text-white" : "border-line bg-white text-blue-950"}`}
+            >
+              数量预约
+            </button>
+            <button
+              type="button"
+              onClick={() => setReservationMode("carton")}
+              className={`min-h-12 rounded border px-3 py-2 text-sm font-black ${reservationMode === "carton" ? "border-blue-600 bg-blue-600 text-white" : "border-line bg-white text-blue-950"}`}
+            >
+              箱号预约
+            </button>
+          </div>
+          <p className="text-xs font-bold text-blue-700">
+            {reservationMode === "carton" ? `已录入 ${cartonModeCount} 箱，预约总数 ${cartonModeTotal} 双` : `预约总数 ${quantityModeTotal} 双`}
+          </p>
+        </section>
+
+        {reservationMode === "quantity" && (
         <section className="panel space-y-3 p-4">
           <div className="flex items-center justify-between gap-3">
             <div>
@@ -546,6 +732,79 @@ export default function NewReservationPage() {
             ))}
           </div>
         </section>
+        )}
+
+        {reservationMode === "carton" && (
+          <section className="panel space-y-3 p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-base font-black">箱号预约明细</h2>
+                <p className="mt-1 text-xs text-slate-500">同一批箱号内容相同时，填写箱号从几到几，系统会自动展开和统计。</p>
+              </div>
+              <button type="button" onClick={addCartonGroup} className="secondary-btn min-h-10 px-3 py-2">
+                <Plus size={16} />
+                加箱号范围
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              {cartonPlanGroups.map((group, groupIndex) => (
+                <article key={group.id} className="rounded border border-blue-200 bg-blue-50 p-3">
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <div>
+                      <h3 className="text-sm font-black">箱号范围 {groupIndex + 1}</h3>
+                      <p className="text-xs font-bold text-blue-700">
+                        {cartonGroupNos(group).length} 箱 / 本范围合计 {cartonGroupTotal(group)} 双
+                      </p>
+                    </div>
+                    <button type="button" onClick={() => removeCartonGroup(group.id)} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded border border-line bg-white text-slate-500" aria-label="删除箱号范围">
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <label>
+                      <span className="label">箱号从</span>
+                      <input className="field mt-2" value={group.carton_start} onChange={(event) => updateCartonGroup(group.id, "carton_start", event.target.value)} placeholder="例如 1 / A001" />
+                    </label>
+                    <label>
+                      <span className="label">箱号到</span>
+                      <input className="field mt-2" value={group.carton_end} onChange={(event) => updateCartonGroup(group.id, "carton_end", event.target.value)} placeholder="例如 10 / A010" />
+                    </label>
+                  </div>
+
+                  <div className="mt-3 space-y-2">
+                    {group.items.map((item, itemIndex) => (
+                      <div key={item.id} className="grid gap-2 rounded border border-line bg-white p-2">
+                        <p className="text-xs font-black text-blue-700">箱内明细 {itemIndex + 1}</p>
+                        <div className="grid grid-cols-2 gap-2">
+                          <input className="field" value={item.po_number} onChange={(event) => updateCartonPlanItem(group.id, item.id, "po_number", event.target.value)} placeholder="订单号" />
+                          <input className="field" value={item.sku} onChange={(event) => updateCartonPlanItem(group.id, item.id, "sku", event.target.value)} placeholder="货号" />
+                          <input className="field" value={item.color} onChange={(event) => updateCartonPlanItem(group.id, item.id, "color", event.target.value)} placeholder="颜色，可不填" />
+                          <input className="field" value={item.size} onChange={(event) => updateCartonPlanItem(group.id, item.id, "size", event.target.value)} placeholder="尺码，可不填" />
+                        </div>
+                        <div className="grid grid-cols-[1fr_40px] items-end gap-2">
+                          <label>
+                            <span className="label">每箱数量</span>
+                            <input className="field mt-2 text-lg font-black" type="number" inputMode="numeric" min={1} value={item.quantity} onChange={(event) => updateCartonPlanItem(group.id, item.id, "quantity", event.target.value)} />
+                          </label>
+                          <button type="button" onClick={() => removeCartonPlanItem(group.id, item.id)} className="mb-0.5 inline-flex h-10 w-10 items-center justify-center rounded border border-line text-slate-500" aria-label="删除箱内明细">
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <button type="button" onClick={() => addCartonPlanItem(group.id)} className="secondary-btn mt-3 min-h-10 w-full">
+                    <Plus size={16} />
+                    加箱内明细
+                  </button>
+                </article>
+              ))}
+            </div>
+          </section>
+        )}
 
         <section className="panel p-4">
           <h2 className="text-base font-black">检品指示书</h2>

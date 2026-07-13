@@ -55,6 +55,29 @@ alter table public.order_items add column if not exists carton_count integer not
 alter table public.order_items add column if not exists quantity_per_carton integer not null default 10;
 alter table public.order_items add column if not exists inbound_quantity integer not null default 0;
 
+create table if not exists public.reservation_cartons (
+  id uuid primary key default gen_random_uuid(),
+  created_at timestamptz not null default now(),
+  order_id uuid not null references public.orders(id) on delete cascade,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  carton_no text not null,
+  remark text,
+  unique (order_id, carton_no)
+);
+
+create table if not exists public.reservation_carton_items (
+  id uuid primary key default gen_random_uuid(),
+  created_at timestamptz not null default now(),
+  reservation_carton_id uuid not null references public.reservation_cartons(id) on delete cascade,
+  order_id uuid not null references public.orders(id) on delete cascade,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  po_number text not null default '',
+  sku text not null default '',
+  color text not null,
+  size text not null,
+  quantity integer not null check (quantity > 0)
+);
+
 create table if not exists public.order_attachments (
   id uuid primary key default gen_random_uuid(),
   created_at timestamptz not null default now(),
@@ -142,6 +165,8 @@ alter table public.inspection_records add constraint inspection_records_inspecti
 
 alter table public.orders enable row level security;
 alter table public.order_items enable row level security;
+alter table public.reservation_cartons enable row level security;
+alter table public.reservation_carton_items enable row level security;
 alter table public.order_attachments enable row level security;
 alter table public.shipment_cartons enable row level security;
 alter table public.shipment_items enable row level security;
@@ -156,6 +181,14 @@ drop policy if exists "users can delete own orders" on public.orders;
 drop policy if exists "users can read own order items" on public.order_items;
 drop policy if exists "users can insert own order items" on public.order_items;
 drop policy if exists "users can update own order items" on public.order_items;
+drop policy if exists "users can read own reservation cartons" on public.reservation_cartons;
+drop policy if exists "users can insert own reservation cartons" on public.reservation_cartons;
+drop policy if exists "users can update own reservation cartons" on public.reservation_cartons;
+drop policy if exists "users can delete own reservation cartons" on public.reservation_cartons;
+drop policy if exists "users can read own reservation carton items" on public.reservation_carton_items;
+drop policy if exists "users can insert own reservation carton items" on public.reservation_carton_items;
+drop policy if exists "users can update own reservation carton items" on public.reservation_carton_items;
+drop policy if exists "users can delete own reservation carton items" on public.reservation_carton_items;
 drop policy if exists "users can read own order attachments" on public.order_attachments;
 drop policy if exists "users can insert own order attachments" on public.order_attachments;
 drop policy if exists "users can update own order attachments" on public.order_attachments;
@@ -207,6 +240,40 @@ create policy "users can update own order items"
 on public.order_items for update
 using (auth.uid() = user_id)
 with check (auth.uid() = user_id);
+
+create policy "users can read own reservation cartons"
+on public.reservation_cartons for select
+using (auth.uid() = user_id);
+
+create policy "users can insert own reservation cartons"
+on public.reservation_cartons for insert
+with check (auth.uid() = user_id);
+
+create policy "users can update own reservation cartons"
+on public.reservation_cartons for update
+using (auth.uid() = user_id)
+with check (auth.uid() = user_id);
+
+create policy "users can delete own reservation cartons"
+on public.reservation_cartons for delete
+using (auth.uid() = user_id);
+
+create policy "users can read own reservation carton items"
+on public.reservation_carton_items for select
+using (auth.uid() = user_id);
+
+create policy "users can insert own reservation carton items"
+on public.reservation_carton_items for insert
+with check (auth.uid() = user_id);
+
+create policy "users can update own reservation carton items"
+on public.reservation_carton_items for update
+using (auth.uid() = user_id)
+with check (auth.uid() = user_id);
+
+create policy "users can delete own reservation carton items"
+on public.reservation_carton_items for delete
+using (auth.uid() = user_id);
 
 drop policy if exists "users can read own order attachments" on public.order_attachments;
 create policy "users can read own order attachments"

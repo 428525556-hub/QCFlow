@@ -4,9 +4,9 @@ import { useCurrentUser } from "@/components/AuthGuard";
 import { findMissingCartonNos, sortByCartonNo } from "@/lib/cartonNumbers";
 import { shortDate } from "@/lib/format";
 import { getActiveOrders, getOrderItems } from "@/src/api/ordersApi";
-import { getRecentUnboxingRecords, getUnboxingPhotoPublicUrl, insertUnboxingRecord, uploadUnboxingPhoto } from "@/src/api/shipmentApi";
+import { getRecentUnboxingRecords, getReservationCartonPlan, getUnboxingPhotoPublicUrl, insertUnboxingRecord, uploadUnboxingPhoto } from "@/src/api/shipmentApi";
 import { compressImageFile, createSafeId, formatMb } from "@/src/utils";
-import type { Order, OrderItem, UnboxingRecord } from "@/lib/types";
+import type { Order, OrderItem, ReservationCarton, ReservationCartonItem, UnboxingRecord } from "@/lib/types";
 import { AlertTriangle, Camera, PackageOpen, Save } from "lucide-react";
 import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
 
@@ -14,6 +14,8 @@ export default function UnboxPage() {
   const user = useCurrentUser();
   const [orders, setOrders] = useState<Order[]>([]);
   const [items, setItems] = useState<OrderItem[]>([]);
+  const [plannedCartons, setPlannedCartons] = useState<ReservationCarton[]>([]);
+  const [plannedCartonItems, setPlannedCartonItems] = useState<ReservationCartonItem[]>([]);
   const [records, setRecords] = useState<UnboxingRecord[]>([]);
   const [orderId, setOrderId] = useState("");
   const [cartonNo, setCartonNo] = useState("");
@@ -47,8 +49,11 @@ export default function UnboxPage() {
         return;
       }
       const { data } = await getOrderItems(orderId);
+      const { data: planData } = await getReservationCartonPlan(orderId);
       const rows = (data ?? []) as OrderItem[];
       setItems(rows);
+      setPlannedCartons(planData?.cartons ?? []);
+      setPlannedCartonItems(planData?.items ?? []);
       setSku(rows[0]?.sku || "");
       setColor(rows[0]?.color || "");
       setSize(rows[0]?.size || "");
@@ -63,6 +68,11 @@ export default function UnboxPage() {
   const selectedOrderRecords = useMemo(() => records.filter((record) => record.order_id === orderId), [records, orderId]);
   const sortedRecords = useMemo(() => sortByCartonNo(selectedOrderRecords), [selectedOrderRecords]);
   const missingCartonNos = useMemo(() => findMissingCartonNos(selectedOrderRecords.map((record) => record.carton_no)), [selectedOrderRecords]);
+  const selectedPlannedCarton = useMemo(() => plannedCartons.find((carton) => carton.carton_no === cartonNo.trim()) ?? null, [plannedCartons, cartonNo]);
+  const selectedPlannedItems = useMemo(
+    () => (selectedPlannedCarton ? plannedCartonItems.filter((item) => item.reservation_carton_id === selectedPlannedCarton.id) : []),
+    [plannedCartonItems, selectedPlannedCarton]
+  );
   const skus = useMemo(() => Array.from(new Set(items.map((item) => item.sku).filter(Boolean))), [items]);
   const colors = useMemo(() => {
     const source = sku ? items.filter((item) => item.sku === sku) : items;
@@ -92,6 +102,20 @@ export default function UnboxPage() {
     const nextItem = items.find((item) => item.sku === sku && item.color === color && item.size === nextSize) ?? null;
     setSize(nextSize);
     setQuantity(Number(nextItem?.quantity_per_carton || 10));
+  }
+
+  function choosePlannedCarton(carton: ReservationCarton) {
+    const planItems = plannedCartonItems.filter((item) => item.reservation_carton_id === carton.id);
+    const firstItem = planItems[0] ?? null;
+    setCartonNo(carton.carton_no);
+    if (firstItem) {
+      setSku(firstItem.sku);
+      setColor(firstItem.color);
+      setSize(firstItem.size);
+      setQuantity(Number(firstItem.quantity || 0));
+    }
+    setShortageQuantity(0);
+    setRemark("");
   }
 
   async function pickPhoto(event: ChangeEvent<HTMLInputElement>) {
@@ -143,24 +167,47 @@ export default function UnboxPage() {
         photoUrl = getUnboxingPhotoPublicUrl(photoPath);
       }
 
-      const { data, error } = await insertUnboxingRecord({
-        order_id: selectedOrder.id,
-        user_id: user.id,
-        carton_no: cartonNo.trim(),
-        po_number: selectedOrder.po_number,
-        sku,
-        color,
-        size,
-        quantity: Number(quantity || 0),
-        shortage_quantity: Number(shortageQuantity || 0),
-        remark: remark || null,
-        photo_url: photoUrl,
-        photo_path: photoPath
-      });
+      const recordsToInsert =
+        selectedPlannedItems.length > 1 && Number(shortageQuantity || 0) === 0
+          ? selectedPlannedItems.map((item) => ({
+              order_id: selectedOrder.id,
+              user_id: user.id,
+              carton_no: cartonNo.trim(),
+              po_number: item.po_number,
+              sku: item.sku,
+              color: item.color,
+              size: item.size,
+              quantity: Number(item.quantity || 0),
+              shortage_quantity: 0,
+              remark: remark || null,
+              photo_url: photoUrl,
+              photo_path: photoPath
+            }))
+          : [
+              {
+                order_id: selectedOrder.id,
+                user_id: user.id,
+                carton_no: cartonNo.trim(),
+                po_number: selectedOrder.po_number,
+                sku,
+                color,
+                size,
+                quantity: Number(quantity || 0),
+                shortage_quantity: Number(shortageQuantity || 0),
+                remark: remark || null,
+                photo_url: photoUrl,
+                photo_path: photoPath
+              }
+            ];
 
-      if (error) throw error;
+      const insertedRecords: UnboxingRecord[] = [];
+      for (const record of recordsToInsert) {
+        const { data, error } = await insertUnboxingRecord(record);
+        if (error) throw error;
+        insertedRecords.push(data as UnboxingRecord);
+      }
 
-      setRecords((current) => [data as UnboxingRecord, ...current]);
+      setRecords((current) => [...insertedRecords, ...current]);
       setCartonNo("");
       setQuantity(10);
       setShortageQuantity(0);
@@ -199,6 +246,55 @@ export default function UnboxPage() {
             ))}
           </select>
         </label>
+
+        {plannedCartons.length > 0 && (
+          <section className="rounded border border-blue-200 bg-blue-50 p-3">
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-black text-blue-950">预约箱号</p>
+                <p className="text-xs font-bold text-blue-700">点击箱号后自动带出箱内货号、颜色、尺码和数量。</p>
+              </div>
+              <span className="rounded bg-white px-2 py-1 text-xs font-black text-blue-700">{plannedCartons.length} 箱</span>
+            </div>
+            <div className="grid grid-cols-5 gap-2 md:grid-cols-10">
+              {sortByCartonNo(plannedCartons).map((carton) => {
+                const confirmed = selectedOrderRecords.some((record) => record.carton_no === carton.carton_no);
+                return (
+                  <button
+                    key={carton.id}
+                    type="button"
+                    onClick={() => choosePlannedCarton(carton)}
+                    className={`min-h-10 rounded border px-2 text-xs font-black ${
+                      cartonNo.trim() === carton.carton_no
+                        ? "border-blue-600 bg-blue-600 text-white"
+                        : confirmed
+                          ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                          : "border-blue-200 bg-white text-blue-900"
+                    }`}
+                  >
+                    {carton.carton_no}
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        )}
+
+        {selectedPlannedItems.length > 0 && (
+          <section className="rounded border border-blue-200 bg-white p-3">
+            <p className="text-sm font-black text-blue-950">箱内预约内容</p>
+            <div className="mt-2 space-y-2">
+              {selectedPlannedItems.map((item) => (
+                <div key={item.id} className="grid grid-cols-[1fr_auto] gap-2 rounded bg-blue-50 px-3 py-2 text-sm">
+                  <span className="font-bold text-slate-700">
+                    {item.po_number} / {item.sku} / {item.color} / {item.size}
+                  </span>
+                  <span className="font-black text-blue-700">{item.quantity} 双</span>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
 
         <div className="grid grid-cols-2 gap-3">
           <label className="space-y-1">

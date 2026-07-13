@@ -1,11 +1,14 @@
 import { supabase } from "@/src/api/client";
+import { apiRequest } from "@/src/api/httpClient";
 import { STORAGE_BUCKETS } from "@/src/constants";
 import { getOrderById, getOrderItems } from "@/src/api/ordersApi";
-import type { Database } from "@/src/types";
+import type { Database, ReservationCarton, ReservationCartonItem } from "@/src/types";
 
 type ShipmentCartonInsert = Database["public"]["Tables"]["shipment_cartons"]["Insert"];
 type ShipmentItemInsert = Database["public"]["Tables"]["shipment_items"]["Insert"];
 type UnboxingRecordInsert = Database["public"]["Tables"]["unboxing_records"]["Insert"];
+type ReservationCartonInsert = Database["public"]["Tables"]["reservation_cartons"]["Insert"];
+type ReservationCartonItemInsert = Database["public"]["Tables"]["reservation_carton_items"]["Insert"];
 
 export async function getShipmentCartons(orderId: string) {
   return supabase.from("shipment_cartons").select("*").eq("order_id", orderId).order("created_at", { ascending: false });
@@ -60,6 +63,17 @@ export async function getUnboxingRecords(orderId?: string) {
   let query = supabase.from("unboxing_records").select("*").order("created_at", { ascending: false });
   if (orderId) query = query.eq("order_id", orderId);
   return query;
+}
+
+export async function getReservationCartonPlan(orderId: string) {
+  return apiRequest<{ cartons: ReservationCarton[]; items: ReservationCartonItem[] }>(`/api/reservation-cartons?orderId=${encodeURIComponent(orderId)}`);
+}
+
+export async function insertReservationCartonPlan(cartons: ReservationCartonInsert[], items: ReservationCartonItemInsert[]) {
+  return apiRequest<{ cartons: ReservationCarton[]; items: ReservationCartonItem[] }>("/api/reservation-cartons", {
+    method: "POST",
+    body: JSON.stringify({ cartons, items })
+  });
 }
 
 export async function getRecentUnboxingRecords(limit = 30) {

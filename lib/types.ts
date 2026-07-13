@@ -58,6 +58,28 @@ export type OrderItem = {
   inbound_quantity: number;
 };
 
+export type ReservationCarton = {
+  id: string;
+  created_at: string;
+  order_id: string;
+  user_id: string;
+  carton_no: string;
+  remark: string | null;
+};
+
+export type ReservationCartonItem = {
+  id: string;
+  created_at: string;
+  reservation_carton_id: string;
+  order_id: string;
+  user_id: string;
+  po_number: string;
+  sku: string;
+  color: string;
+  size: string;
+  quantity: number;
+};
+
 export type OrderAttachment = {
   id: string;
   created_at: string;
@@ -198,6 +220,18 @@ export type Database = {
           quantity_per_carton?: number;
         };
         Update: Partial<Omit<OrderItem, "id" | "created_at" | "user_id">>;
+        Relationships: [];
+      };
+      reservation_cartons: {
+        Row: ReservationCarton;
+        Insert: Omit<ReservationCarton, "id" | "created_at"> & { id?: string; created_at?: string };
+        Update: Partial<Omit<ReservationCarton, "id" | "created_at" | "user_id">>;
+        Relationships: [];
+      };
+      reservation_carton_items: {
+        Row: ReservationCartonItem;
+        Insert: Omit<ReservationCartonItem, "id" | "created_at"> & { id?: string; created_at?: string };
+        Update: Partial<Omit<ReservationCartonItem, "id" | "created_at" | "user_id">>;
         Relationships: [];
       };
       order_attachments: {
