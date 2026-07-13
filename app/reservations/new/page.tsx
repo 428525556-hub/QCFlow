@@ -4,13 +4,21 @@ import { useCurrentUser } from "@/components/AuthGuard";
 import type { InspectionPlan } from "@/lib/types";
 import { getOrderAttachmentPublicUrl, insertOrderAttachments, uploadOrderAttachment } from "@/src/api/orderAttachmentsApi";
 import { createOrder, insertOrderItems } from "@/src/api/ordersApi";
-import { FileSpreadsheet, PackageSearch, Palette, Plus, Save, Trash2, Upload } from "lucide-react";
+import { FileSpreadsheet, Layers3, PackageSearch, Plus, Save, Trash2, Upload } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { ChangeEvent, FormEvent, useMemo, useState } from "react";
 
 type SizeForm = { id: string; size: string; carton_count: string; quantity_per_carton: string; quantity: string };
-type ColorForm = { id: string; po_number: string; sku: string; color: string; sizes: SizeForm[] };
-type ReservationForm = { customer_name: string; factory_name: string; inbound_date: string; shipping_date: string; inspection_plan: InspectionPlan; reservation_remark: string };
+type StyleForm = { id: string; sku: string; color: string; sizes: SizeForm[] };
+type PurchaseOrderForm = { id: string; po_number: string; styles: StyleForm[] };
+type ReservationForm = {
+  customer_name: string;
+  factory_name: string;
+  inbound_date: string;
+  shipping_date: string;
+  inspection_plan: InspectionPlan;
+  reservation_remark: string;
+};
 
 function createId() {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
@@ -21,74 +29,138 @@ function createSize(): SizeForm {
   return { id: createId(), size: "", carton_count: "", quantity_per_carton: "10", quantity: "" };
 }
 
-function createColor(): ColorForm {
-  return { id: createId(), po_number: "", sku: "", color: "", sizes: [createSize()] };
+function createStyle(): StyleForm {
+  return { id: createId(), sku: "", color: "", sizes: [createSize()] };
+}
+
+function createPurchaseOrder(): PurchaseOrderForm {
+  return { id: createId(), po_number: "", styles: [createStyle()] };
 }
 
 function safeFileName(name: string) {
   return name.replace(/[^\w.\-\u4e00-\u9fa5]/g, "_");
 }
 
+function toNumber(value: string | number | null | undefined) {
+  return Number(value || 0);
+}
+
 function sizeTotal(sizes: SizeForm[]) {
-  return sizes.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+  return sizes.reduce((sum, size) => sum + toNumber(size.quantity), 0);
+}
+
+function styleTotal(style: StyleForm) {
+  return sizeTotal(style.sizes);
+}
+
+function orderTotal(order: PurchaseOrderForm) {
+  return order.styles.reduce((sum, style) => sum + styleTotal(style), 0);
 }
 
 export default function NewReservationPage() {
   const user = useCurrentUser();
   const router = useRouter();
-  const [form, setForm] = useState<ReservationForm>({ customer_name: "", factory_name: "", inbound_date: "", shipping_date: "", inspection_plan: "both", reservation_remark: "" });
-  const [colors, setColors] = useState<ColorForm[]>([createColor()]);
+  const [form, setForm] = useState<ReservationForm>({
+    customer_name: "",
+    factory_name: "",
+    inbound_date: "",
+    shipping_date: "",
+    inspection_plan: "both",
+    reservation_remark: ""
+  });
+  const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrderForm[]>([createPurchaseOrder()]);
   const [attachments, setAttachments] = useState<File[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
-  const totalQuantity = useMemo(() => colors.reduce((sum, color) => sum + sizeTotal(color.sizes), 0), [colors]);
+  const totalQuantity = useMemo(() => purchaseOrders.reduce((sum, order) => sum + orderTotal(order), 0), [purchaseOrders]);
 
-  function updateColor(colorId: string, key: keyof Omit<ColorForm, "id" | "sizes">, value: string) {
-    setColors((current) => current.map((color) => (color.id === colorId ? { ...color, [key]: value } : color)));
+  function updatePurchaseOrder(orderId: string, value: string) {
+    setPurchaseOrders((current) => current.map((order) => (order.id === orderId ? { ...order, po_number: value } : order)));
   }
 
-  function updateSize(colorId: string, sizeId: string, key: keyof Omit<SizeForm, "id">, value: string) {
-    setColors((current) =>
-      current.map((color) =>
-        color.id === colorId
-          ? {
-              ...color,
-              sizes: color.sizes.map((size) => {
-                if (size.id !== sizeId) return size;
-                const next = { ...size, [key]: value };
-                if (key === "carton_count" || key === "quantity_per_carton") {
-                  const cartonCount = Number(key === "carton_count" ? value : next.carton_count);
-                  const quantityPerCarton = Number(key === "quantity_per_carton" ? value : next.quantity_per_carton);
-                  if (cartonCount > 0 && quantityPerCarton > 0) next.quantity = String(cartonCount * quantityPerCarton);
-                }
-                return next;
-              })
-            }
-          : color
+  function updateStyle(orderId: string, styleId: string, key: keyof Omit<StyleForm, "id" | "sizes">, value: string) {
+    setPurchaseOrders((current) =>
+      current.map((order) =>
+        order.id === orderId
+          ? { ...order, styles: order.styles.map((style) => (style.id === styleId ? { ...style, [key]: value } : style)) }
+          : order
       )
     );
   }
 
-  function addColor() {
-    setColors((current) => {
-      const last = current[current.length - 1];
-      return [...current, { ...createColor(), po_number: last?.po_number ?? "", sku: last?.sku ?? "" }];
-    });
+  function updateSize(orderId: string, styleId: string, sizeId: string, key: keyof Omit<SizeForm, "id">, value: string) {
+    setPurchaseOrders((current) =>
+      current.map((order) =>
+        order.id === orderId
+          ? {
+              ...order,
+              styles: order.styles.map((style) =>
+                style.id === styleId
+                  ? {
+                      ...style,
+                      sizes: style.sizes.map((size) => {
+                        if (size.id !== sizeId) return size;
+                        const next = { ...size, [key]: value };
+                        if (key === "carton_count" || key === "quantity_per_carton") {
+                          const cartonCount = Number(key === "carton_count" ? value : next.carton_count);
+                          const quantityPerCarton = Number(key === "quantity_per_carton" ? value : next.quantity_per_carton);
+                          if (cartonCount > 0 && quantityPerCarton > 0) next.quantity = String(cartonCount * quantityPerCarton);
+                        }
+                        return next;
+                      })
+                    }
+                  : style
+              )
+            }
+          : order
+      )
+    );
   }
 
-  function removeColor(colorId: string) {
-    setColors((current) => (current.length === 1 ? current : current.filter((color) => color.id !== colorId)));
+  function addPurchaseOrder() {
+    setPurchaseOrders((current) => [...current, createPurchaseOrder()]);
   }
 
-  function addSize(colorId: string) {
-    setColors((current) => current.map((color) => (color.id === colorId ? { ...color, sizes: [...color.sizes, createSize()] } : color)));
+  function removePurchaseOrder(orderId: string) {
+    setPurchaseOrders((current) => (current.length === 1 ? current : current.filter((order) => order.id !== orderId)));
   }
 
-  function removeSize(colorId: string, sizeId: string) {
-    setColors((current) =>
-      current.map((color) =>
-        color.id === colorId ? { ...color, sizes: color.sizes.length === 1 ? color.sizes : color.sizes.filter((size) => size.id !== sizeId) } : color
+  function addStyle(orderId: string) {
+    setPurchaseOrders((current) => current.map((order) => (order.id === orderId ? { ...order, styles: [...order.styles, createStyle()] } : order)));
+  }
+
+  function removeStyle(orderId: string, styleId: string) {
+    setPurchaseOrders((current) =>
+      current.map((order) =>
+        order.id === orderId
+          ? { ...order, styles: order.styles.length === 1 ? order.styles : order.styles.filter((style) => style.id !== styleId) }
+          : order
+      )
+    );
+  }
+
+  function addSize(orderId: string, styleId: string) {
+    setPurchaseOrders((current) =>
+      current.map((order) =>
+        order.id === orderId
+          ? { ...order, styles: order.styles.map((style) => (style.id === styleId ? { ...style, sizes: [...style.sizes, createSize()] } : style)) }
+          : order
+      )
+    );
+  }
+
+  function removeSize(orderId: string, styleId: string, sizeId: string) {
+    setPurchaseOrders((current) =>
+      current.map((order) =>
+        order.id === orderId
+          ? {
+              ...order,
+              styles: order.styles.map((style) =>
+                style.id === styleId ? { ...style, sizes: style.sizes.length === 1 ? style.sizes : style.sizes.filter((size) => size.id !== sizeId) } : style
+              )
+            }
+          : order
       )
     );
   }
@@ -106,66 +178,57 @@ export default function NewReservationPage() {
     event.preventDefault();
     if (!user) return;
 
-    const cleanColors = colors.map((color) => ({
-      po_number: color.po_number.trim(),
-      sku: color.sku.trim(),
-      color: color.color.trim() || "未定",
-      sizes: color.sizes.map((size) => ({
-        size: size.size.trim() || "未定",
-        carton_count: Number(size.carton_count || 0),
-        quantity_per_carton: Number(size.quantity_per_carton || 10),
-        quantity: Number(size.quantity)
-      }))
-    }));
-    const hasInvalidColor = cleanColors.some((color) => !color.po_number || !color.sku);
-    const hasInvalidSize = cleanColors.some((color) => color.sizes.some((size) => size.quantity <= 0));
+    const flatItems = purchaseOrders.flatMap((order) =>
+      order.styles.flatMap((style) =>
+        style.sizes.map((size) => ({
+          po_number: order.po_number.trim(),
+          sku: style.sku.trim(),
+          color: style.color.trim() || "未定",
+          size: size.size.trim() || "未定",
+          carton_count: Number(size.carton_count || 0),
+          quantity_per_carton: Number(size.quantity_per_carton || 10),
+          quantity: Number(size.quantity)
+        }))
+      )
+    );
+
+    const hasInvalidItem = flatItems.some((item) => !item.po_number || !item.sku || item.quantity <= 0);
 
     if (!form.customer_name.trim() || !form.factory_name.trim()) {
       setError("请填写客户名称和工厂名称。");
       return;
     }
 
-    if (hasInvalidColor || hasInvalidSize) {
-      setError("请填写订单号、番号和预约数量。颜色和尺码不知道时可以先不填。");
+    if (hasInvalidItem) {
+      setError("请填写订单号、货号和总双数。颜色和尺码不知道时可以先不填。");
       return;
     }
 
     setSaving(true);
     setError("");
 
-    const flatItems = cleanColors.flatMap((color) =>
-      color.sizes.map((size) => ({
-        po_number: color.po_number,
-        sku: color.sku,
-        color: color.color,
-        size: size.size,
-        carton_count: size.carton_count,
-        quantity_per_carton: size.quantity_per_carton,
-        quantity: size.quantity
-      }))
-    );
     const uniquePoNumbers = Array.from(new Set(flatItems.map((item) => item.po_number)));
     const uniqueSkus = Array.from(new Set(flatItems.map((item) => item.sku)));
     const uniqueColors = Array.from(new Set(flatItems.map((item) => item.color)));
     const uniqueSizes = Array.from(new Set(flatItems.map((item) => item.size)));
 
     const { data, error: insertError } = await createOrder({
-        order_type: "reservation",
-        customer_name: form.customer_name.trim(),
-        factory_name: form.factory_name.trim(),
-        inbound_date: form.inbound_date || null,
-        shipping_date: form.shipping_date || null,
-        inspection_plan: form.inspection_plan,
-        reservation_remark: form.reservation_remark.trim() || null,
-        po_number: uniquePoNumbers.length === 1 ? uniquePoNumbers[0] : "多订单号",
-        sku: uniqueSkus.length === 1 ? uniqueSkus[0] : "多番号",
-        color: uniqueColors.length === 1 ? uniqueColors[0] : "多颜色",
-        size: uniqueSizes.length === 1 ? uniqueSizes[0] : "多尺码",
-        quantity: totalQuantity,
-        inbound_quantity: 0,
-        status: "未开始",
-        user_id: user.id
-      });
+      order_type: "reservation",
+      customer_name: form.customer_name.trim(),
+      factory_name: form.factory_name.trim(),
+      inbound_date: form.inbound_date || null,
+      shipping_date: form.shipping_date || null,
+      inspection_plan: form.inspection_plan,
+      reservation_remark: form.reservation_remark.trim() || null,
+      po_number: uniquePoNumbers.length === 1 ? uniquePoNumbers[0] : "多订单号",
+      sku: uniqueSkus.length === 1 ? uniqueSkus[0] : "多货号",
+      color: uniqueColors.length === 1 ? uniqueColors[0] : "多颜色",
+      size: uniqueSizes.length === 1 ? uniqueSizes[0] : "多尺码",
+      quantity: totalQuantity,
+      inbound_quantity: 0,
+      status: "未开始",
+      user_id: user.id
+    });
 
     if (insertError) {
       setSaving(false);
@@ -212,19 +275,19 @@ export default function NewReservationPage() {
   }
 
   return (
-    <div className="mx-auto max-w-4xl space-y-4">
+    <div className="mx-auto max-w-5xl space-y-4">
       <div>
         <div className="mb-2 inline-flex items-center gap-2 rounded bg-blue-100 px-2.5 py-1 text-xs font-black text-blue-900">
           <PackageSearch size={14} />
           预约检品
         </div>
-        <h1 className="text-2xl font-black tracking-normal text-blue-950">创建预约检品总订单</h1>
-        <p className="mt-1 text-sm text-blue-700">先录入总订单。后续货到时，再按颜色、尺码分批入库。</p>
+        <h1 className="text-2xl font-black tracking-normal text-blue-950">创建预约总单</h1>
+        <p className="mt-1 text-sm text-blue-700">按客户、工厂、日期建立总单，再按订单号、货号、尺码录入明细。</p>
       </div>
 
       <form onSubmit={submit} className="space-y-4">
         <section className="panel space-y-4 p-4">
-          <h2 className="text-base font-black">客户和日期</h2>
+          <h2 className="text-base font-black">客户 / 工厂 / 日期</h2>
           <div className="grid gap-4 md:grid-cols-2">
             <div>
               <label className="label" htmlFor="customer_name">客户名称</label>
@@ -235,7 +298,7 @@ export default function NewReservationPage() {
               <input id="factory_name" className="field mt-2" value={form.factory_name} onChange={(event) => setForm((current) => ({ ...current, factory_name: event.target.value }))} required />
             </div>
             <div>
-              <label className="label" htmlFor="inbound_date">预计来货日期</label>
+              <label className="label" htmlFor="inbound_date">预约日期</label>
               <input id="inbound_date" className="field mt-2" type="date" value={form.inbound_date} onChange={(event) => setForm((current) => ({ ...current, inbound_date: event.target.value }))} />
             </div>
             <div>
@@ -275,75 +338,104 @@ export default function NewReservationPage() {
         <section className="panel space-y-3 p-4">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <h2 className="text-base font-black">总订单颜色尺码</h2>
+              <h2 className="text-base font-black">订单号 / 货号 / 尺码明细</h2>
               <p className="mt-1 text-xs text-slate-500">预约总数：{totalQuantity} 双</p>
             </div>
-            <button type="button" onClick={addColor} className="secondary-btn min-h-10 px-3 py-2"><Plus size={16} />加颜色</button>
+            <button type="button" onClick={addPurchaseOrder} className="secondary-btn min-h-10 px-3 py-2">
+              <Plus size={16} />
+              加订单号
+            </button>
           </div>
 
           <div className="space-y-4">
-            {colors.map((color, colorIndex) => {
-              const colorTotal = sizeTotal(color.sizes);
-              return (
-                <article key={color.id} className="rounded border border-line bg-blue-50 p-3">
-                  <div className="mb-3 flex items-center justify-between gap-3">
-                    <div className="flex min-w-0 items-center gap-2">
-                      <Palette size={18} className="shrink-0 text-machine" />
-                      <div className="min-w-0">
-                        <h3 className="truncate text-sm font-black">颜色组 {colorIndex + 1}</h3>
-                        <p className="text-xs font-bold text-blue-700">本颜色合计：{colorTotal} 双</p>
-                      </div>
-                    </div>
-                    <button type="button" onClick={() => removeColor(color.id)} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded border border-line bg-white text-slate-500" aria-label="删除颜色"><Trash2 size={16} /></button>
-                  </div>
-
-                  <div className="grid gap-3 md:grid-cols-3">
-                    <div>
-                      <label className="label" htmlFor={`po-${color.id}`}>订单号</label>
-                      <input id={`po-${color.id}`} className="field mt-2" value={color.po_number} onChange={(event) => updateColor(color.id, "po_number", event.target.value)} required />
-                    </div>
-                    <div>
-                      <label className="label" htmlFor={`sku-${color.id}`}>番号</label>
-                      <input id={`sku-${color.id}`} className="field mt-2" value={color.sku} onChange={(event) => updateColor(color.id, "sku", event.target.value)} required />
-                    </div>
-                    <div>
-                      <label className="label" htmlFor={`color-${color.id}`}>颜色 <span className="text-xs text-slate-400">可不填</span></label>
-                      <input id={`color-${color.id}`} className="field mt-2" value={color.color} onChange={(event) => updateColor(color.id, "color", event.target.value)} placeholder="不知道可先空着" />
+            {purchaseOrders.map((order, orderIndex) => (
+              <article key={order.id} className="rounded border border-blue-200 bg-blue-50 p-3">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <Layers3 size={18} className="shrink-0 text-machine" />
+                    <div className="min-w-0">
+                      <h3 className="truncate text-sm font-black">订单号组 {orderIndex + 1}</h3>
+                      <p className="text-xs font-bold text-blue-700">本订单号合计：{orderTotal(order)} 双</p>
                     </div>
                   </div>
+                  <button type="button" onClick={() => removePurchaseOrder(order.id)} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded border border-line bg-white text-slate-500" aria-label="删除订单号">
+                    <Trash2 size={16} />
+                  </button>
+                </div>
 
-                  <div className="mt-3 space-y-2">
-                    {color.sizes.map((size, sizeIndex) => (
-                      <div key={size.id} className="grid gap-2 rounded border border-line bg-white p-2">
-                        <div className="grid grid-cols-2 gap-2">
-                          <div>
-                            <label className="label" htmlFor={`size-${size.id}`}>尺码 {sizeIndex + 1} <span className="text-xs text-slate-400">可不填</span></label>
-                            <input id={`size-${size.id}`} className="field mt-2" value={size.size} onChange={(event) => updateSize(color.id, size.id, "size", event.target.value)} placeholder="不知道可先空着" />
-                          </div>
-                          <div>
-                            <label className="label" htmlFor={`carton-${size.id}`}>预约箱数</label>
-                            <input id={`carton-${size.id}`} className="field mt-2 text-lg font-black" type="number" inputMode="numeric" min={0} value={size.carton_count} onChange={(event) => updateSize(color.id, size.id, "carton_count", event.target.value)} placeholder="0" />
-                          </div>
+                <div>
+                  <label className="label" htmlFor={`po-${order.id}`}>订单号</label>
+                  <input id={`po-${order.id}`} className="field mt-2" value={order.po_number} onChange={(event) => updatePurchaseOrder(order.id, event.target.value)} required />
+                </div>
+
+                <div className="mt-3 space-y-3">
+                  {order.styles.map((style, styleIndex) => (
+                    <section key={style.id} className="rounded border border-line bg-white p-3">
+                      <div className="mb-3 flex items-center justify-between gap-3">
+                        <div>
+                          <h4 className="text-sm font-black">货号 {styleIndex + 1}</h4>
+                          <p className="text-xs font-bold text-blue-700">本货号合计：{styleTotal(style)} 双</p>
                         </div>
-                        <div className="grid grid-cols-[1fr_1fr_40px] items-end gap-2">
-                          <div>
-                            <label className="label" htmlFor={`per-carton-${size.id}`}>入数</label>
-                            <input id={`per-carton-${size.id}`} className="field mt-2 text-lg font-black" type="number" inputMode="numeric" min={0} value={size.quantity_per_carton} onChange={(event) => updateSize(color.id, size.id, "quantity_per_carton", event.target.value)} placeholder="10" />
-                          </div>
-                          <div>
-                            <label className="label" htmlFor={`qty-${size.id}`}>总双数</label>
-                            <input id={`qty-${size.id}`} className="field mt-2 text-lg font-black" type="number" inputMode="numeric" min={1} value={size.quantity} onChange={(event) => updateSize(color.id, size.id, "quantity", event.target.value)} required />
-                          </div>
-                          <button type="button" onClick={() => removeSize(color.id, size.id)} className="mb-0.5 inline-flex h-10 w-10 items-center justify-center rounded border border-line text-slate-500" aria-label="删除尺码"><Trash2 size={15} /></button>
+                        <button type="button" onClick={() => removeStyle(order.id, style.id)} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded border border-line text-slate-500" aria-label="删除货号">
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
+
+                      <div className="grid gap-3 md:grid-cols-2">
+                        <div>
+                          <label className="label" htmlFor={`sku-${style.id}`}>货号</label>
+                          <input id={`sku-${style.id}`} className="field mt-2" value={style.sku} onChange={(event) => updateStyle(order.id, style.id, "sku", event.target.value)} required />
+                        </div>
+                        <div>
+                          <label className="label" htmlFor={`color-${style.id}`}>颜色 <span className="text-xs text-slate-400">可不填</span></label>
+                          <input id={`color-${style.id}`} className="field mt-2" value={style.color} onChange={(event) => updateStyle(order.id, style.id, "color", event.target.value)} placeholder="不知道可先空着" />
                         </div>
                       </div>
-                    ))}
-                  </div>
 
-                  <button type="button" onClick={() => addSize(color.id)} className="secondary-btn mt-3 min-h-10 w-full"><Plus size={16} />加尺码</button>
-                </article>
-              );
-            })}
+                      <div className="mt-3 space-y-2">
+                        {style.sizes.map((size, sizeIndex) => (
+                          <div key={size.id} className="grid gap-2 rounded border border-line bg-blue-50 p-2">
+                            <div className="grid grid-cols-2 gap-2">
+                              <div>
+                                <label className="label" htmlFor={`size-${size.id}`}>尺码 {sizeIndex + 1} <span className="text-xs text-slate-400">可不填</span></label>
+                                <input id={`size-${size.id}`} className="field mt-2" value={size.size} onChange={(event) => updateSize(order.id, style.id, size.id, "size", event.target.value)} placeholder="不知道可先空着" />
+                              </div>
+                              <div>
+                                <label className="label" htmlFor={`carton-${size.id}`}>预约箱数</label>
+                                <input id={`carton-${size.id}`} className="field mt-2 text-lg font-black" type="number" inputMode="numeric" min={0} value={size.carton_count} onChange={(event) => updateSize(order.id, style.id, size.id, "carton_count", event.target.value)} placeholder="0" />
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-[1fr_1fr_40px] items-end gap-2">
+                              <div>
+                                <label className="label" htmlFor={`per-carton-${size.id}`}>入数</label>
+                                <input id={`per-carton-${size.id}`} className="field mt-2 text-lg font-black" type="number" inputMode="numeric" min={0} value={size.quantity_per_carton} onChange={(event) => updateSize(order.id, style.id, size.id, "quantity_per_carton", event.target.value)} placeholder="10" />
+                              </div>
+                              <div>
+                                <label className="label" htmlFor={`qty-${size.id}`}>总双数</label>
+                                <input id={`qty-${size.id}`} className="field mt-2 text-lg font-black" type="number" inputMode="numeric" min={1} value={size.quantity} onChange={(event) => updateSize(order.id, style.id, size.id, "quantity", event.target.value)} required />
+                              </div>
+                              <button type="button" onClick={() => removeSize(order.id, style.id, size.id)} className="mb-0.5 inline-flex h-10 w-10 items-center justify-center rounded border border-line text-slate-500" aria-label="删除尺码">
+                                <Trash2 size={15} />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      <button type="button" onClick={() => addSize(order.id, style.id)} className="secondary-btn mt-3 min-h-10 w-full">
+                        <Plus size={16} />
+                        加尺码
+                      </button>
+                    </section>
+                  ))}
+                </div>
+
+                <button type="button" onClick={() => addStyle(order.id)} className="secondary-btn mt-3 min-h-10 w-full">
+                  <Plus size={16} />
+                  加货号
+                </button>
+              </article>
+            ))}
           </div>
         </section>
 
@@ -360,8 +452,13 @@ export default function NewReservationPage() {
             <div className="mt-3 space-y-2">
               {attachments.map((file, index) => (
                 <div key={`${file.name}-${index}`} className="flex items-center justify-between gap-3 rounded border border-line bg-white px-3 py-2 text-sm">
-                  <div className="flex min-w-0 items-center gap-2"><FileSpreadsheet size={16} className="shrink-0 text-machine" /><span className="truncate font-bold">{file.name}</span></div>
-                  <button type="button" onClick={() => removeAttachment(index)} className="inline-flex h-8 w-8 items-center justify-center rounded border border-line text-slate-500" aria-label="删除附件"><Trash2 size={15} /></button>
+                  <div className="flex min-w-0 items-center gap-2">
+                    <FileSpreadsheet size={16} className="shrink-0 text-machine" />
+                    <span className="truncate font-bold">{file.name}</span>
+                  </div>
+                  <button type="button" onClick={() => removeAttachment(index)} className="inline-flex h-8 w-8 items-center justify-center rounded border border-line text-slate-500" aria-label="删除附件">
+                    <Trash2 size={15} />
+                  </button>
                 </div>
               ))}
             </div>
@@ -370,7 +467,10 @@ export default function NewReservationPage() {
 
         {error && <p className="rounded bg-red-50 px-3 py-2 text-sm font-bold text-red-700">{error}</p>}
 
-        <button type="submit" className="primary-btn w-full" disabled={saving || totalQuantity <= 0}><Save size={18} />保存预约总订单：{totalQuantity} 双</button>
+        <button type="submit" className="primary-btn w-full" disabled={saving || totalQuantity <= 0}>
+          <Save size={18} />
+          保存预约总单：{totalQuantity} 双
+        </button>
       </form>
     </div>
   );
