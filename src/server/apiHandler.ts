@@ -10,7 +10,14 @@ type Handler<TContext> = (request: NextRequest, context: TContext, requestId: st
 async function attachRequestId(response: NextResponse, requestId: string) {
   const headers = new Headers(response.headers);
   headers.set("x-request-id", requestId);
-  const body = (await response.json()) as Record<string, unknown>;
+  let body: Record<string, unknown>;
+
+  try {
+    body = (await response.clone().json()) as Record<string, unknown>;
+  } catch {
+    body = { data: null, error: { message: "Invalid API response body" } };
+  }
+
   return NextResponse.json({ ...body, requestId }, { status: response.status, headers });
 }
 
