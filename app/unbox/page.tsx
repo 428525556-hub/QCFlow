@@ -17,6 +17,7 @@ export default function UnboxPage() {
   const [records, setRecords] = useState<UnboxingRecord[]>([]);
   const [orderId, setOrderId] = useState("");
   const [cartonNo, setCartonNo] = useState("");
+  const [sku, setSku] = useState("");
   const [color, setColor] = useState("");
   const [size, setSize] = useState("");
   const [quantity, setQuantity] = useState(10);
@@ -48,8 +49,9 @@ export default function UnboxPage() {
       const { data } = await getOrderItems(orderId);
       const rows = (data ?? []) as OrderItem[];
       setItems(rows);
-      setColor((current) => current || rows[0]?.color || "");
-      setSize((current) => current || rows[0]?.size || "");
+      setSku(rows[0]?.sku || "");
+      setColor(rows[0]?.color || "");
+      setSize(rows[0]?.size || "");
       setQuantity(Number(rows[0]?.quantity_per_carton || 10));
     }
 
@@ -57,25 +59,37 @@ export default function UnboxPage() {
   }, [orderId]);
 
   const selectedOrder = orders.find((order) => order.id === orderId) ?? null;
-  const selectedItem = useMemo(() => items.find((item) => item.color === color && item.size === size) ?? null, [items, color, size]);
+  const selectedItem = useMemo(() => items.find((item) => item.sku === sku && item.color === color && item.size === size) ?? null, [items, sku, color, size]);
   const selectedOrderRecords = useMemo(() => records.filter((record) => record.order_id === orderId), [records, orderId]);
   const sortedRecords = useMemo(() => sortByCartonNo(selectedOrderRecords), [selectedOrderRecords]);
   const missingCartonNos = useMemo(() => findMissingCartonNos(selectedOrderRecords.map((record) => record.carton_no)), [selectedOrderRecords]);
-  const colors = useMemo(() => Array.from(new Set(items.map((item) => item.color).filter(Boolean))), [items]);
+  const skus = useMemo(() => Array.from(new Set(items.map((item) => item.sku).filter(Boolean))), [items]);
+  const colors = useMemo(() => {
+    const source = sku ? items.filter((item) => item.sku === sku) : items;
+    return Array.from(new Set(source.map((item) => item.color).filter(Boolean)));
+  }, [items, sku]);
   const sizes = useMemo(() => {
-    const source = color ? items.filter((item) => item.color === color) : items;
+    const source = items.filter((item) => (!sku || item.sku === sku) && (!color || item.color === color));
     return Array.from(new Set(source.map((item) => item.size).filter(Boolean))).sort((a, b) => a.localeCompare(b, "zh-Hans-CN", { numeric: true }));
-  }, [items, color]);
+  }, [items, sku, color]);
+
+  function changeSku(nextSku: string) {
+    const nextItem = items.find((item) => item.sku === nextSku) ?? null;
+    setSku(nextSku);
+    setColor(nextItem?.color ?? "");
+    setSize(nextItem?.size ?? "");
+    setQuantity(Number(nextItem?.quantity_per_carton || 10));
+  }
 
   function changeColor(nextColor: string) {
-    const nextItem = items.find((item) => item.color === nextColor) ?? null;
+    const nextItem = items.find((item) => item.sku === sku && item.color === nextColor) ?? null;
     setColor(nextColor);
     setSize(nextItem?.size ?? "");
     setQuantity(Number(nextItem?.quantity_per_carton || 10));
   }
 
   function changeSize(nextSize: string) {
-    const nextItem = items.find((item) => item.color === color && item.size === nextSize) ?? null;
+    const nextItem = items.find((item) => item.sku === sku && item.color === color && item.size === nextSize) ?? null;
     setSize(nextSize);
     setQuantity(Number(nextItem?.quantity_per_carton || 10));
   }
@@ -102,8 +116,8 @@ export default function UnboxPage() {
       setMessage("请填写箱号。");
       return;
     }
-    if (!color || !size) {
-      setMessage("请选择颜色和尺码。");
+    if (!sku || !color || !size) {
+      setMessage("请选择货号、颜色和尺码。");
       return;
     }
     if (shortageQuantity > 0 && !photo) {
@@ -134,7 +148,7 @@ export default function UnboxPage() {
         user_id: user.id,
         carton_no: cartonNo.trim(),
         po_number: selectedOrder.po_number,
-        sku: selectedOrder.sku,
+        sku,
         color,
         size,
         quantity: Number(quantity || 0),
@@ -197,7 +211,13 @@ export default function UnboxPage() {
           </label>
           <label className="space-y-1">
             <span className="label">番号</span>
-            <input className="field bg-slate-50" value={selectedOrder?.sku ?? ""} readOnly />
+            <select className="field" value={sku} onChange={(event) => changeSku(event.target.value)} required>
+              {skus.map((item) => (
+                <option key={item} value={item}>
+                  {item}
+                </option>
+              ))}
+            </select>
           </label>
           <label className="space-y-1">
             <span className="label">颜色</span>
