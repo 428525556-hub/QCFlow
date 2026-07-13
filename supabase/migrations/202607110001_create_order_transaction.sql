@@ -62,6 +62,8 @@ begin
     sku,
     color,
     size,
+    carton_count,
+    quantity_per_carton,
     quantity,
     inbound_quantity
   )
@@ -72,6 +74,8 @@ begin
     item ->> 'sku',
     item ->> 'color',
     item ->> 'size',
+    coalesce((item ->> 'carton_count')::integer, 0),
+    coalesce((item ->> 'quantity_per_carton')::integer, 10),
     (item ->> 'quantity')::integer,
     coalesce((item ->> 'inbound_quantity')::integer, 0)
   from jsonb_array_elements(item_payload) as item;
@@ -82,4 +86,3 @@ $$;
 
 revoke all on function public.create_order_with_items(jsonb, jsonb) from public;
 grant execute on function public.create_order_with_items(jsonb, jsonb) to authenticated;
-

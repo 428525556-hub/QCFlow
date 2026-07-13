@@ -42,6 +42,8 @@ create table if not exists public.order_items (
   sku text not null default '',
   color text not null,
   size text not null,
+  carton_count integer not null default 0 check (carton_count >= 0),
+  quantity_per_carton integer not null default 10 check (quantity_per_carton >= 0),
   quantity integer not null check (quantity > 0)
   ,
   inbound_quantity integer not null default 0 check (inbound_quantity >= 0)
@@ -49,6 +51,8 @@ create table if not exists public.order_items (
 
 alter table public.order_items add column if not exists po_number text not null default '';
 alter table public.order_items add column if not exists sku text not null default '';
+alter table public.order_items add column if not exists carton_count integer not null default 0;
+alter table public.order_items add column if not exists quantity_per_carton integer not null default 10;
 alter table public.order_items add column if not exists inbound_quantity integer not null default 0;
 
 create table if not exists public.order_attachments (

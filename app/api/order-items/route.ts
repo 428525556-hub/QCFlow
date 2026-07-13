@@ -23,7 +23,14 @@ export const POST = withApiHandler(async (request) => {
   const payload = (await request.json()) as OrderItemInsert[];
   const rows = payload.map((item) => ({ ...item, user_id: user.id }));
   const supabase = createRequestSupabaseClient(request);
-  const { data, error } = await supabase.from("order_items").insert(rows).select("*");
+  let { data, error } = await supabase.from("order_items").insert(rows).select("*");
+
+  if (error && /carton_count|quantity_per_carton/i.test(error.message)) {
+    const fallbackRows = rows.map(({ carton_count, quantity_per_carton, ...row }) => row);
+    const fallbackResult = await supabase.from("order_items").insert(fallbackRows).select("*");
+    data = fallbackResult.data;
+    error = fallbackResult.error;
+  }
 
   if (error) throw databaseError(error);
   return apiSuccess(data, 201);
@@ -39,4 +46,3 @@ export const DELETE = withApiHandler(async (request) => {
   if (error) throw databaseError(error);
   return apiSuccess({ ids });
 });
-

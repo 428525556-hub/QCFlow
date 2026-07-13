@@ -52,6 +52,8 @@ export type OrderItem = {
   sku: string;
   color: string;
   size: string;
+  carton_count: number;
+  quantity_per_carton: number;
   quantity: number;
   inbound_quantity: number;
 };
@@ -189,7 +191,12 @@ export type Database = {
       };
       order_items: {
         Row: OrderItem;
-        Insert: Omit<OrderItem, "id" | "created_at"> & { id?: string; created_at?: string };
+        Insert: Omit<OrderItem, "id" | "created_at" | "carton_count" | "quantity_per_carton"> & {
+          id?: string;
+          created_at?: string;
+          carton_count?: number;
+          quantity_per_carton?: number;
+        };
         Update: Partial<Omit<OrderItem, "id" | "created_at" | "user_id">>;
         Relationships: [];
       };

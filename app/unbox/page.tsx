@@ -50,12 +50,14 @@ export default function UnboxPage() {
       setItems(rows);
       setColor((current) => current || rows[0]?.color || "");
       setSize((current) => current || rows[0]?.size || "");
+      setQuantity(Number(rows[0]?.quantity_per_carton || 10));
     }
 
     loadItems();
   }, [orderId]);
 
   const selectedOrder = orders.find((order) => order.id === orderId) ?? null;
+  const selectedItem = useMemo(() => items.find((item) => item.color === color && item.size === size) ?? null, [items, color, size]);
   const selectedOrderRecords = useMemo(() => records.filter((record) => record.order_id === orderId), [records, orderId]);
   const sortedRecords = useMemo(() => sortByCartonNo(selectedOrderRecords), [selectedOrderRecords]);
   const missingCartonNos = useMemo(() => findMissingCartonNos(selectedOrderRecords.map((record) => record.carton_no)), [selectedOrderRecords]);
@@ -66,8 +68,16 @@ export default function UnboxPage() {
   }, [items, color]);
 
   function changeColor(nextColor: string) {
+    const nextItem = items.find((item) => item.color === nextColor) ?? null;
     setColor(nextColor);
-    setSize(items.find((item) => item.color === nextColor)?.size ?? "");
+    setSize(nextItem?.size ?? "");
+    setQuantity(Number(nextItem?.quantity_per_carton || 10));
+  }
+
+  function changeSize(nextSize: string) {
+    const nextItem = items.find((item) => item.color === color && item.size === nextSize) ?? null;
+    setSize(nextSize);
+    setQuantity(Number(nextItem?.quantity_per_carton || 10));
   }
 
   async function pickPhoto(event: ChangeEvent<HTMLInputElement>) {
@@ -201,7 +211,7 @@ export default function UnboxPage() {
           </label>
           <label className="space-y-1">
             <span className="label">尺码</span>
-            <select className="field" value={size} onChange={(event) => setSize(event.target.value)}>
+            <select className="field" value={size} onChange={(event) => changeSize(event.target.value)}>
               {sizes.map((item) => (
                 <option key={item} value={item}>
                   {item}
@@ -212,6 +222,11 @@ export default function UnboxPage() {
           <label className="space-y-1">
             <span className="label">实际数量</span>
             <input className="field" type="number" inputMode="numeric" min={0} value={quantity} onChange={(event) => setQuantity(Number(event.target.value || 0))} />
+            {selectedItem && (
+              <p className="text-xs font-bold text-blue-700">
+                预约 {selectedItem.carton_count || 0} 箱 / 入数 {selectedItem.quantity_per_carton || 10} / 总数 {selectedItem.quantity}
+              </p>
+            )}
             <div className="grid grid-cols-3 gap-2 pt-1">
               {[10, 5, 15].map((preset) => (
                 <button
