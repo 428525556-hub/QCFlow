@@ -19,6 +19,7 @@ export default function UnboxPage() {
   const [records, setRecords] = useState<UnboxingRecord[]>([]);
   const [orderId, setOrderId] = useState("");
   const [cartonNo, setCartonNo] = useState("");
+  const [poNumber, setPoNumber] = useState("");
   const [sku, setSku] = useState("");
   const [color, setColor] = useState("");
   const [size, setSize] = useState("");
@@ -54,6 +55,8 @@ export default function UnboxPage() {
       setItems(rows);
       setPlannedCartons(planData?.cartons ?? []);
       setPlannedCartonItems(planData?.items ?? []);
+      setCartonNo("");
+      setPoNumber(rows[0]?.po_number || "");
       setSku(rows[0]?.sku || "");
       setColor(rows[0]?.color || "");
       setSize(rows[0]?.size || "");
@@ -64,7 +67,10 @@ export default function UnboxPage() {
   }, [orderId]);
 
   const selectedOrder = orders.find((order) => order.id === orderId) ?? null;
-  const selectedItem = useMemo(() => items.find((item) => item.sku === sku && item.color === color && item.size === size) ?? null, [items, sku, color, size]);
+  const selectedItem = useMemo(
+    () => items.find((item) => item.po_number === poNumber && item.sku === sku && item.color === color && item.size === size) ?? null,
+    [items, poNumber, sku, color, size]
+  );
   const selectedOrderRecords = useMemo(() => records.filter((record) => record.order_id === orderId), [records, orderId]);
   const sortedRecords = useMemo(() => sortByCartonNo(selectedOrderRecords), [selectedOrderRecords]);
   const missingCartonNos = useMemo(() => findMissingCartonNos(selectedOrderRecords.map((record) => record.carton_no)), [selectedOrderRecords]);
@@ -73,18 +79,50 @@ export default function UnboxPage() {
     () => (selectedPlannedCarton ? plannedCartonItems.filter((item) => item.reservation_carton_id === selectedPlannedCarton.id) : []),
     [plannedCartonItems, selectedPlannedCarton]
   );
-  const skus = useMemo(() => Array.from(new Set(items.map((item) => item.sku).filter(Boolean))), [items]);
+  const poNumbers = useMemo(() => Array.from(new Set(items.map((item) => item.po_number).filter(Boolean))), [items]);
+  const skus = useMemo(() => {
+    const source = poNumber ? items.filter((item) => item.po_number === poNumber) : items;
+    return Array.from(new Set(source.map((item) => item.sku).filter(Boolean)));
+  }, [items, poNumber]);
   const colors = useMemo(() => {
-    const source = sku ? items.filter((item) => item.sku === sku) : items;
+    const source = items.filter((item) => (!poNumber || item.po_number === poNumber) && (!sku || item.sku === sku));
     return Array.from(new Set(source.map((item) => item.color).filter(Boolean)));
-  }, [items, sku]);
+  }, [items, poNumber, sku]);
   const sizes = useMemo(() => {
-    const source = items.filter((item) => (!sku || item.sku === sku) && (!color || item.color === color));
+    const source = items.filter((item) => (!poNumber || item.po_number === poNumber) && (!sku || item.sku === sku) && (!color || item.color === color));
     return Array.from(new Set(source.map((item) => item.size).filter(Boolean))).sort((a, b) => a.localeCompare(b, "zh-Hans-CN", { numeric: true }));
-  }, [items, sku, color]);
+  }, [items, poNumber, sku, color]);
+
+  useEffect(() => {
+    if (plannedCartons.length === 0 || plannedCartonItems.length === 0) return;
+    if (cartonNo && plannedCartons.some((carton) => carton.carton_no === cartonNo.trim())) return;
+
+    const sortedCartons = sortByCartonNo(plannedCartons);
+    const nextCarton = sortedCartons.find((carton) => !selectedOrderRecords.some((record) => record.carton_no === carton.carton_no)) ?? sortedCartons[0] ?? null;
+    if (!nextCarton) return;
+
+    const firstItem = plannedCartonItems.find((item) => item.reservation_carton_id === nextCarton.id) ?? null;
+    setCartonNo(nextCarton.carton_no);
+    if (firstItem) {
+      setPoNumber(firstItem.po_number);
+      setSku(firstItem.sku);
+      setColor(firstItem.color);
+      setSize(firstItem.size);
+      setQuantity(Number(firstItem.quantity || 0));
+    }
+  }, [cartonNo, plannedCartons, plannedCartonItems, selectedOrderRecords]);
+
+  function changePoNumber(nextPoNumber: string) {
+    const nextItem = items.find((item) => item.po_number === nextPoNumber) ?? null;
+    setPoNumber(nextPoNumber);
+    setSku(nextItem?.sku ?? "");
+    setColor(nextItem?.color ?? "");
+    setSize(nextItem?.size ?? "");
+    setQuantity(Number(nextItem?.quantity_per_carton || 10));
+  }
 
   function changeSku(nextSku: string) {
-    const nextItem = items.find((item) => item.sku === nextSku) ?? null;
+    const nextItem = items.find((item) => (!poNumber || item.po_number === poNumber) && item.sku === nextSku) ?? null;
     setSku(nextSku);
     setColor(nextItem?.color ?? "");
     setSize(nextItem?.size ?? "");
@@ -92,14 +130,14 @@ export default function UnboxPage() {
   }
 
   function changeColor(nextColor: string) {
-    const nextItem = items.find((item) => item.sku === sku && item.color === nextColor) ?? null;
+    const nextItem = items.find((item) => item.po_number === poNumber && item.sku === sku && item.color === nextColor) ?? null;
     setColor(nextColor);
     setSize(nextItem?.size ?? "");
     setQuantity(Number(nextItem?.quantity_per_carton || 10));
   }
 
   function changeSize(nextSize: string) {
-    const nextItem = items.find((item) => item.sku === sku && item.color === color && item.size === nextSize) ?? null;
+    const nextItem = items.find((item) => item.po_number === poNumber && item.sku === sku && item.color === color && item.size === nextSize) ?? null;
     setSize(nextSize);
     setQuantity(Number(nextItem?.quantity_per_carton || 10));
   }
@@ -109,6 +147,7 @@ export default function UnboxPage() {
     const firstItem = planItems[0] ?? null;
     setCartonNo(carton.carton_no);
     if (firstItem) {
+      setPoNumber(firstItem.po_number);
       setSku(firstItem.sku);
       setColor(firstItem.color);
       setSize(firstItem.size);
@@ -140,8 +179,8 @@ export default function UnboxPage() {
       setMessage("请填写箱号。");
       return;
     }
-    if (!sku || !color || !size) {
-      setMessage("请选择货号、颜色和尺码。");
+    if (!poNumber || !sku || !color || !size) {
+      setMessage("请选择订单号、货号、颜色和尺码。");
       return;
     }
     if (shortageQuantity > 0 && !photo) {
@@ -188,7 +227,7 @@ export default function UnboxPage() {
                 order_id: selectedOrder.id,
                 user_id: user.id,
                 carton_no: cartonNo.trim(),
-                po_number: selectedOrder.po_number,
+                po_number: poNumber,
                 sku,
                 color,
                 size,
@@ -303,7 +342,13 @@ export default function UnboxPage() {
           </label>
           <label className="space-y-1">
             <span className="label">订单号</span>
-            <input className="field bg-slate-50" value={selectedOrder?.po_number ?? ""} readOnly />
+            <select className="field" value={poNumber} onChange={(event) => changePoNumber(event.target.value)} required>
+              {poNumbers.map((item) => (
+                <option key={item} value={item}>
+                  {item}
+                </option>
+              ))}
+            </select>
           </label>
           <label className="space-y-1">
             <span className="label">番号</span>
