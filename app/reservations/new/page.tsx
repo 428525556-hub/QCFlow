@@ -2,7 +2,7 @@
 
 import { useCurrentUser } from "@/components/AuthGuard";
 import type { InspectionPlan } from "@/lib/types";
-import { getOrderAttachmentPublicUrl, insertOrderAttachments, uploadOrderAttachment } from "@/src/api/orderAttachmentsApi";
+import { insertOrderAttachments, uploadOrderAttachmentFile } from "@/src/api/orderAttachmentsApi";
 import { createOrder, insertOrderItems } from "@/src/api/ordersApi";
 import { insertReservationCartonPlan } from "@/src/api/shipmentApi";
 import { FileSpreadsheet, Layers3, PackageSearch, Plus, Save, Trash2, Upload } from "lucide-react";
@@ -503,15 +503,22 @@ export default function NewReservationPage() {
       const attachmentRows = [];
       for (const file of attachments) {
         const path = `${user.id}/${orderId}/${createId()}-${safeFileName(file.name)}`;
-        const { error: uploadError } = await uploadOrderAttachment(path, file);
+        const { data: uploadData, error: uploadError } = await uploadOrderAttachmentFile(path, file);
         if (uploadError) {
           setSaving(false);
-          setError(`${uploadError.message}。请确认 order-attachments 存储桶已创建。`);
+          setError(`${uploadError.message}。请确认 Supabase 存储桶策略已创建，或稍后重新上传。`);
           return;
         }
 
-        const publicUrl = getOrderAttachmentPublicUrl(path);
-        attachmentRows.push({ order_id: orderId, user_id: user.id, file_name: file.name, file_url: publicUrl, file_path: path, mime_type: file.type || null, file_size: file.size || null });
+        attachmentRows.push({
+          order_id: orderId,
+          user_id: user.id,
+          file_name: file.name,
+          file_url: uploadData?.publicUrl ?? "",
+          file_path: uploadData?.path ?? path,
+          mime_type: file.type || null,
+          file_size: file.size || null
+        });
       }
 
       const { error: attachmentError } = await insertOrderAttachments(attachmentRows);

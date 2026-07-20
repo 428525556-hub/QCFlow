@@ -4,7 +4,7 @@ import { useCurrentUser } from "@/components/AuthGuard";
 import { StatusBadge } from "@/components/StatusBadge";
 import { shortDate } from "@/lib/format";
 import { getInspectionPhotoPublicUrl, getInspectionWorkspaceData, insertInspectionRecord, uploadInspectionPhoto } from "@/src/api/inspectionApi";
-import { getOrderAttachmentPublicUrl, insertOrderAttachments, uploadOrderAttachment } from "@/src/api/orderAttachmentsApi";
+import { insertOrderAttachments, uploadOrderAttachmentFile } from "@/src/api/orderAttachmentsApi";
 import { updateOrder } from "@/src/api/ordersApi";
 import { compressImageFile, createSafeId, formatMb, safeFileName, withTimeout } from "@/src/utils";
 import type { DefectGroup, InspectionRecord, InspectionStage, Order, OrderAttachment, OrderItem } from "@/lib/types";
@@ -142,26 +142,28 @@ export function InspectionWorkspace({ orderId, stage, title, subtitle, groups }:
 
       for (let index = 0; index < files.length; index += 1) {
         const file = files[index];
-        setAttachmentStatus(`正在上传指示书... ${index + 1}/${files.length} ${file.name}`);
-        const path = `${user.id}/${orderId}/${createSafeId()}-${safeFileName(file.name)}`;
+        const uploadFile = file.type.startsWith("image/")
+          ? await compressImageFile(file, { maxSide: 1400, quality: 0.62, fileName: `${file.name.replace(/\.[^.]+$/, "") || "instruction"}-compressed.jpg` })
+          : file;
+        setAttachmentStatus(`正在上传指示书... ${index + 1}/${files.length} ${file.name} ${formatMb(uploadFile.size)}`);
+        const path = `${user.id}/${orderId}/${createSafeId()}-${safeFileName(uploadFile.name)}`;
 
-        const { error: uploadError } = await withTimeout(uploadOrderAttachment(path, file), 45000, "指示书上传超时，请检查手机网络后重试");
+        const { data: uploadData, error: uploadError } = await withTimeout(uploadOrderAttachmentFile(path, uploadFile), 45000, "指示书上传超时，请检查手机网络后重试");
 
         if (uploadError) {
           throw new Error(uploadError.message);
         }
 
-        const publicUrl = getOrderAttachmentPublicUrl(path);
         uploadedRows.push({
           id: createSafeId(),
           created_at: new Date().toISOString(),
           order_id: orderId,
           user_id: user.id,
           file_name: file.name,
-          file_url: publicUrl,
-          file_path: path,
-          mime_type: file.type || null,
-          file_size: file.size || null
+          file_url: uploadData?.publicUrl ?? "",
+          file_path: uploadData?.path ?? path,
+          mime_type: uploadFile.type || file.type || null,
+          file_size: uploadFile.size || file.size || null
         });
       }
 
