@@ -84,6 +84,10 @@ export async function insertUnboxingRecord(record: UnboxingRecordInsert) {
   return supabase.from("unboxing_records").insert(record).select("*").single();
 }
 
+export async function insertUnboxingRecords(records: UnboxingRecordInsert[]) {
+  return supabase.from("unboxing_records").insert(records).select("*");
+}
+
 export async function uploadUnboxingPhoto(path: string, file: File) {
   return supabase.storage.from(STORAGE_BUCKETS.inspectionPhotos).upload(path, file, {
     cacheControl: "3600",

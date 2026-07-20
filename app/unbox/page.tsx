@@ -4,10 +4,10 @@ import { useCurrentUser } from "@/components/AuthGuard";
 import { findMissingCartonNos, sortByCartonNo } from "@/lib/cartonNumbers";
 import { shortDate } from "@/lib/format";
 import { getActiveOrders, getOrderItems } from "@/src/api/ordersApi";
-import { getRecentUnboxingRecords, getReservationCartonPlan, getUnboxingPhotoPublicUrl, insertUnboxingRecord, uploadUnboxingPhoto } from "@/src/api/shipmentApi";
+import { getRecentUnboxingRecords, getReservationCartonPlan, getUnboxingPhotoPublicUrl, getUnboxingRecords, insertUnboxingRecord, insertUnboxingRecords, uploadUnboxingPhoto } from "@/src/api/shipmentApi";
 import { compressImageFile, createSafeId, formatMb } from "@/src/utils";
 import type { Order, OrderItem, ReservationCarton, ReservationCartonItem, UnboxingRecord } from "@/lib/types";
-import { AlertTriangle, Camera, PackageOpen, Save } from "lucide-react";
+import { AlertTriangle, Camera, CheckSquare, PackageOpen, Save } from "lucide-react";
 import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
 
 export default function UnboxPage() {
@@ -29,6 +29,7 @@ export default function UnboxPage() {
   const [photo, setPhoto] = useState<File | null>(null);
   const [preview, setPreview] = useState("");
   const [saving, setSaving] = useState(false);
+  const [bulkSaving, setBulkSaving] = useState(false);
   const [message, setMessage] = useState("");
 
   useEffect(() => {
@@ -49,12 +50,12 @@ export default function UnboxPage() {
         setItems([]);
         return;
       }
-      const { data } = await getOrderItems(orderId);
-      const { data: planData } = await getReservationCartonPlan(orderId);
+      const [{ data }, { data: planData }, { data: orderRecordRows }] = await Promise.all([getOrderItems(orderId), getReservationCartonPlan(orderId), getUnboxingRecords(orderId)]);
       const rows = (data ?? []) as OrderItem[];
       setItems(rows);
       setPlannedCartons(planData?.cartons ?? []);
       setPlannedCartonItems(planData?.items ?? []);
+      setRecords((current) => [...((orderRecordRows ?? []) as UnboxingRecord[]), ...current.filter((record) => record.order_id !== orderId)]);
       setCartonNo("");
       setPoNumber(rows[0]?.po_number || "");
       setSku(rows[0]?.sku || "");
@@ -78,6 +79,14 @@ export default function UnboxPage() {
   const selectedPlannedItems = useMemo(
     () => (selectedPlannedCarton ? plannedCartonItems.filter((item) => item.reservation_carton_id === selectedPlannedCarton.id) : []),
     [plannedCartonItems, selectedPlannedCarton]
+  );
+  const unopenedPlannedCartons = useMemo(
+    () => sortByCartonNo(plannedCartons).filter((carton) => !selectedOrderRecords.some((record) => record.carton_no === carton.carton_no)),
+    [plannedCartons, selectedOrderRecords]
+  );
+  const unopenedPlannedItemCount = useMemo(
+    () => unopenedPlannedCartons.reduce((sum, carton) => sum + plannedCartonItems.filter((item) => item.reservation_carton_id === carton.id).length, 0),
+    [plannedCartonItems, unopenedPlannedCartons]
   );
   const poNumbers = useMemo(() => Array.from(new Set(items.map((item) => item.po_number).filter(Boolean))), [items]);
   const skus = useMemo(() => {
@@ -263,6 +272,56 @@ export default function UnboxPage() {
     }
   }
 
+  async function openAllPlannedCartons() {
+    if (!user || !selectedOrder || unopenedPlannedCartons.length === 0 || bulkSaving) return;
+
+    const ok = window.confirm(`确认将剩余 ${unopenedPlannedCartons.length} 箱全部登记为已开箱吗？如果有少鞋，请不要使用一键全部开箱。`);
+    if (!ok) return;
+
+    const rows = unopenedPlannedCartons.flatMap((carton) =>
+      plannedCartonItems
+        .filter((item) => item.reservation_carton_id === carton.id)
+        .map((item) => ({
+          order_id: selectedOrder.id,
+          user_id: user.id,
+          carton_no: carton.carton_no,
+          po_number: item.po_number,
+          sku: item.sku,
+          color: item.color,
+          size: item.size,
+          quantity: Number(item.quantity || 0),
+          shortage_quantity: 0,
+          remark: "一键全部开箱",
+          photo_url: null,
+          photo_path: null
+        }))
+    );
+
+    if (rows.length === 0) {
+      setMessage("这个订单没有可自动开箱的预约箱内明细。");
+      return;
+    }
+
+    setBulkSaving(true);
+    setMessage(`正在一键开箱：${unopenedPlannedCartons.length} 箱 / ${rows.length} 条明细...`);
+
+    try {
+      const { data, error } = await insertUnboxingRecords(rows);
+      if (error) throw error;
+      const inserted = (data ?? []) as UnboxingRecord[];
+      setRecords((current) => [...inserted, ...current]);
+      setCartonNo("");
+      setShortageQuantity(0);
+      setRemark("");
+      setMessage(`已完成一键开箱：${unopenedPlannedCartons.length} 箱。`);
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "未知错误";
+      setMessage(`${detail}。请确认 Supabase 已执行最新 staff_shared_access.sql 和 schema.sql。`);
+    } finally {
+      setBulkSaving(false);
+    }
+  }
+
   return (
     <div className="mx-auto max-w-4xl space-y-4">
       <div>
@@ -293,7 +352,20 @@ export default function UnboxPage() {
                 <p className="text-sm font-black text-blue-950">预约箱号</p>
                 <p className="text-xs font-bold text-blue-700">点击箱号后自动带出箱内货号、颜色、尺码和数量。</p>
               </div>
-              <span className="rounded bg-white px-2 py-1 text-xs font-black text-blue-700">{plannedCartons.length} 箱</span>
+              <div className="flex shrink-0 items-center gap-2">
+                <span className="rounded bg-white px-2 py-1 text-xs font-black text-blue-700">
+                  待开 {unopenedPlannedCartons.length} / {plannedCartons.length} 箱
+                </span>
+                <button
+                  type="button"
+                  onClick={openAllPlannedCartons}
+                  disabled={bulkSaving || saving || unopenedPlannedCartons.length === 0 || unopenedPlannedItemCount === 0}
+                  className="inline-flex min-h-9 items-center gap-1 rounded border border-blue-300 bg-white px-2 py-1 text-xs font-black text-blue-800 disabled:opacity-50"
+                >
+                  <CheckSquare size={14} />
+                  {bulkSaving ? "开箱中" : "全部开箱"}
+                </button>
+              </div>
             </div>
             <div className="grid grid-cols-5 gap-2 md:grid-cols-10">
               {sortByCartonNo(plannedCartons).map((carton) => {
