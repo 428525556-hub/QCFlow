@@ -143,6 +143,18 @@ function cartonGroupTotal(group: CartonPlanGroupForm) {
   return oneCartonQuantity * cartonGroupNos(group).length;
 }
 
+function findDuplicateCartonNos(groups: CartonPlanGroupForm[]) {
+  const seen = new Set<string>();
+  const duplicates = new Set<string>();
+
+  for (const cartonNo of groups.flatMap((group) => cartonGroupNos(group))) {
+    if (seen.has(cartonNo)) duplicates.add(cartonNo);
+    seen.add(cartonNo);
+  }
+
+  return Array.from(duplicates);
+}
+
 function summarizeCartonItems(groups: CartonPlanGroupForm[]) {
   const summary = new Map<string, { po_number: string; sku: string; color: string; size: string; carton_count: number; quantity_per_carton: number; quantity: number }>();
 
@@ -406,6 +418,7 @@ export default function NewReservationPage() {
     const hasInvalidCartonPlan =
       reservationMode === "carton" &&
       cartonPlanGroups.some((group) => cartonGroupNos(group).length === 0 || group.items.some((item) => !item.po_number.trim() || !item.sku.trim() || Number(item.quantity || 0) <= 0));
+    const duplicateCartonNos = reservationMode === "carton" ? findDuplicateCartonNos(cartonPlanGroups) : [];
 
     if (!form.customer_name.trim() || !form.factory_name.trim()) {
       setError("请填写客户名称和工厂名称。");
@@ -419,6 +432,11 @@ export default function NewReservationPage() {
 
     if (hasInvalidCartonPlan) {
       setError("请填写箱号范围、订单号、货号和每箱数量。颜色和尺码不知道时可以先不填。");
+      return;
+    }
+
+    if (duplicateCartonNos.length > 0) {
+      setError(`箱号不能重复：${duplicateCartonNos.slice(0, 10).join("、")}${duplicateCartonNos.length > 10 ? " 等" : ""}。请检查箱号范围是否重叠。`);
       return;
     }
 
@@ -492,7 +510,11 @@ export default function NewReservationPage() {
       const { error: cartonError } = await insertReservationCartonPlan(cartonRows, cartonItemRows);
       if (cartonError) {
         setSaving(false);
-        setError(`${cartonError.message}。请先执行最新的预约箱号数据库 SQL。`);
+        if (/duplicate key|reservation_cartons_order_id_carton_no_key/i.test(cartonError.message)) {
+          setError("箱号重复了。请检查多个箱号范围是否重叠，或同一个箱号是否录入了两次。");
+        } else {
+          setError(`${cartonError.message}。请先执行最新的预约箱号数据库 SQL。`);
+        }
         return;
       }
     }
