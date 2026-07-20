@@ -92,7 +92,12 @@ function createCartonPlanGroup(): CartonPlanGroupForm {
 }
 
 function safeFileName(name: string) {
-  return name.replace(/[^\w.\-\u4e00-\u9fa5]/g, "_");
+  const dotIndex = name.lastIndexOf(".");
+  const rawBase = dotIndex > 0 ? name.slice(0, dotIndex) : name;
+  const rawExt = dotIndex > 0 ? name.slice(dotIndex + 1) : "";
+  const base = rawBase.replace(/[^A-Za-z0-9_-]/g, "_").replace(/_+/g, "_").replace(/^_+|_+$/g, "") || "file";
+  const ext = rawExt.replace(/[^A-Za-z0-9]/g, "").slice(0, 10);
+  return ext ? `${base.slice(0, 80)}.${ext}` : base.slice(0, 80);
 }
 
 function toNumber(value: string | number | null | undefined) {

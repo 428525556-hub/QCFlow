@@ -8,7 +8,12 @@ export function formatMb(bytes: number) {
 }
 
 export function safeFileName(name: string) {
-  return name.replace(/[^\w.\-\u4e00-\u9fa5]/g, "_");
+  const dotIndex = name.lastIndexOf(".");
+  const rawBase = dotIndex > 0 ? name.slice(0, dotIndex) : name;
+  const rawExt = dotIndex > 0 ? name.slice(dotIndex + 1) : "";
+  const base = rawBase.replace(/[^A-Za-z0-9_-]/g, "_").replace(/_+/g, "_").replace(/^_+|_+$/g, "") || "file";
+  const ext = rawExt.replace(/[^A-Za-z0-9]/g, "").slice(0, 10);
+  return ext ? `${base.slice(0, 80)}.${ext}` : base.slice(0, 80);
 }
 
 export async function withTimeout<T>(promise: PromiseLike<T>, ms: number, message: string) {

@@ -13,18 +13,26 @@ export async function uploadOrderAttachment(path: string, file: File) {
 }
 
 function shouldFallbackToInspectionBucket(message: string) {
-  return /bucket|not found|does not exist|violates row-level security|row level security|policy/i.test(message);
+  return /bucket|not found|does not exist|violates row-level security|row level security|policy|invalid key/i.test(message);
+}
+
+function sanitizeStoragePath(path: string) {
+  return path
+    .split("/")
+    .map((segment) => segment.replace(/[^A-Za-z0-9._-]/g, "_").replace(/_+/g, "_").replace(/^_+|_+$/g, "") || "file")
+    .join("/");
 }
 
 export async function uploadOrderAttachmentFile(path: string, file: File) {
-  const primary = await supabase.storage.from(STORAGE_BUCKETS.orderAttachments).upload(path, file, { cacheControl: "3600", upsert: false });
+  const safePath = sanitizeStoragePath(path);
+  const primary = await supabase.storage.from(STORAGE_BUCKETS.orderAttachments).upload(safePath, file, { cacheControl: "3600", upsert: false });
 
   if (!primary.error) {
     return {
       error: null,
       data: {
-        path,
-        publicUrl: supabase.storage.from(STORAGE_BUCKETS.orderAttachments).getPublicUrl(path).data.publicUrl,
+        path: safePath,
+        publicUrl: supabase.storage.from(STORAGE_BUCKETS.orderAttachments).getPublicUrl(safePath).data.publicUrl,
         bucket: STORAGE_BUCKETS.orderAttachments
       }
     };
@@ -34,7 +42,7 @@ export async function uploadOrderAttachmentFile(path: string, file: File) {
     return { error: primary.error, data: null };
   }
 
-  const fallbackPath = path.replace(/^([^/]+)\//, "$1/order-attachments/");
+  const fallbackPath = safePath.replace(/^([^/]+)\//, "$1/order-attachments/");
   const fallback = await supabase.storage.from(STORAGE_BUCKETS.inspectionPhotos).upload(fallbackPath, file, { cacheControl: "3600", upsert: false });
 
   if (fallback.error) {
