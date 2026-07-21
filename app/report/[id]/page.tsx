@@ -20,28 +20,6 @@ const pdfLabels: Record<string, string> = {
   "常用补充": "Common"
 };
 
-function excelEscape(value: string | number | null | undefined) {
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
-}
-
-function excelCell(value: string | number | null | undefined, className = "") {
-  return `<td class="${className}">${excelEscape(value)}</td>`;
-}
-
-function excelHeader(value: string | number | null | undefined, className = "") {
-  return `<th class="${className}">${excelEscape(value)}</th>`;
-}
-
-function verticalExcelHeader(value: string | number | null | undefined, className = "") {
-  const text = String(value ?? "");
-  const chars = Array.from(text).map((char) => (char.trim() ? excelEscape(char) : "&nbsp;"));
-  return `<th class="${className}">${chars.join("<br />")}</th>`;
-}
-
 export default function ReportPage() {
   const params = useParams<{ id: string }>();
   const orderId = params.id;
@@ -163,269 +141,156 @@ export default function ReportPage() {
 
   async function downloadExcel() {
     if (!order) return;
+    const ExcelJS = (await import("exceljs")).default;
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet("検品検針報告書");
+
     const finalRows = report.finalRecordRows.filter((record) => record.finalQuantity > 0);
     const detailRows = finalRows.length > 0 ? finalRows : report.finalRecordRows;
     const stageText = (stage: string) => (stage === "xray" ? "X線" : "検品");
     const allDefects = report.grouped.flatMap((group) => group.items.map((item) => ({ group: group.group, type: item.type, quantity: item.quantity })));
     const leftColumns = ["NO", "品番", "注文NO", "カラー", "サイズ", "検品数", "区分", "備考"];
-    const columnCount = Math.max(59, leftColumns.length + allDefects.length);
-    const emptyCells = (count: number) => Array.from({ length: count }, () => "<td></td>").join("");
-    const spanCell = (value: string | number | null | undefined, colspan: number, className = "") => `<td colspan="${colspan}" class="${className}">${excelEscape(value)}</td>`;
-    const spanHeader = (value: string | number | null | undefined, colspan: number, className = "") => `<th colspan="${colspan}" class="${className}">${excelEscape(value)}</th>`;
+    const columnCount = Math.max(16, leftColumns.length + allDefects.length);
     const defectTotal = (type: string) => detailRows.filter((record) => record.defect_type === type).reduce((sum, record) => sum + record.finalQuantity, 0);
     const defectDetailRows = report.finalRecordRows.filter((record) => Number(record.quantity || 0) > 0 || Boolean(record.photo_url));
     const defectPhotoRows = defectDetailRows.filter((record) => Boolean(record.photo_url));
-    const photoSources = new Map<string, string>();
 
-    await Promise.all(
-      defectPhotoRows.map(async (record) => {
-        if (!record.photo_url) return;
+    const border = { style: "thin" as const, color: { argb: "FF000000" } };
+    const baseAlignment = { vertical: "middle" as const, horizontal: "center" as const, wrapText: true };
+    const titleFill = { type: "pattern" as const, pattern: "solid" as const, fgColor: { argb: "FFFFFFFF" } };
+    const sectionFill = { type: "pattern" as const, pattern: "solid" as const, fgColor: { argb: "FFE7F3FF" } };
+    const headerFill = { type: "pattern" as const, pattern: "solid" as const, fgColor: { argb: "FFF4F9FF" } };
+    const totalFill = { type: "pattern" as const, pattern: "solid" as const, fgColor: { argb: "FFEEF6FF" } };
 
+    worksheet.columns = Array.from({ length: columnCount }, (_, index) => ({ width: index < leftColumns.length ? 11 : 7 }));
+    worksheet.views = [{ showGridLines: false }];
+
+    function styleRange(rowNumber: number, fromColumn: number, toColumn: number, options: { fill?: typeof sectionFill; bold?: boolean; fontColor?: string; horizontal?: "left" | "center" | "right" } = {}) {
+      for (let column = fromColumn; column <= toColumn; column += 1) {
+        const cell = worksheet.getCell(rowNumber, column);
+        cell.border = { top: border, left: border, bottom: border, right: border };
+        cell.alignment = { ...baseAlignment, horizontal: options.horizontal ?? "center" };
+        cell.font = { name: "Yu Gothic", size: 9, bold: options.bold ?? false, color: options.fontColor ? { argb: options.fontColor } : undefined };
+        if (options.fill) cell.fill = options.fill;
+      }
+    }
+
+    function merge(rowNumber: number, fromColumn: number, toColumn: number, value: string | number | null | undefined, options: { fill?: typeof sectionFill; bold?: boolean; fontColor?: string; horizontal?: "left" | "center" | "right" } = {}) {
+      worksheet.mergeCells(rowNumber, fromColumn, rowNumber, toColumn);
+      const cell = worksheet.getCell(rowNumber, fromColumn);
+      cell.value = value ?? "";
+      styleRange(rowNumber, fromColumn, toColumn, options);
+    }
+
+    function writeRow(values: Array<string | number | null | undefined>, rowNumber?: number, options: { fill?: typeof sectionFill; bold?: boolean; fontColor?: string; horizontal?: "left" | "center" | "right" } = {}) {
+      const row = rowNumber ? worksheet.getRow(rowNumber) : worksheet.addRow([]);
+      values.forEach((value, index) => {
+        const cell = row.getCell(index + 1);
+        cell.value = value ?? "";
+      });
+      styleRange(row.number, 1, Math.max(columnCount, values.length), options);
+      row.commit();
+      return row.number;
+    }
+
+    function sectionTitle(title: string) {
+      const rowNumber = worksheet.rowCount + 1;
+      merge(rowNumber, 1, columnCount, title, { fill: sectionFill, bold: true });
+      worksheet.getRow(rowNumber).height = 20;
+    }
+
+    function getImageExtension(type: string): "png" | "jpeg" | "gif" {
+      if (type.includes("png")) return "png";
+      if (type.includes("gif")) return "gif";
+      return "jpeg";
+    }
+
+    writeRow(["検品検針報告書 / 检品检针报告书"], undefined, { fill: titleFill, bold: true });
+    merge(1, 1, columnCount, "検品検針報告書 / 检品检针报告书", { fill: titleFill, bold: true });
+    worksheet.getRow(1).height = 26;
+
+    writeRow(["検品報告書NO", order.po_number, "得意先 / 客户名称", order.customer_name, "工場名 / 工厂名称", order.factory_name, "検品日", new Date().toLocaleDateString()], undefined, { bold: true });
+    writeRow(["ブランド名", "QCFlow", "注文NO / 订单号", order.po_number, "品番 / 番号", order.sku, "入荷日 / 来货日", order.inbound_date ?? "-"], undefined, { bold: true });
+    writeRow(["検品数量", report.total, "出荷日 / 出货日", order.shipping_date ?? "-", "不良数", report.defectQty, "不良率", report.rate], undefined, { bold: true });
+
+    const defectStartColumn = leftColumns.length + 1;
+    writeRow([...leftColumns, ...allDefects.map((item) => item.type)], undefined, { fill: headerFill, bold: true });
+    if (detailRows.length === 0) {
+      merge(worksheet.rowCount + 1, 1, columnCount, "不良記録なし / 暂无不良记录", { horizontal: "left" });
+    } else {
+      detailRows.forEach((record, index) => {
+        const defectValues = allDefects.map((item) => (item.type === record.defect_type ? record.finalQuantity || "" : ""));
+        writeRow([index + 1, order.sku, order.po_number, record.color || "-", record.size || "-", record.quantity, stageText(record.inspection_stage), record.remark || "", ...defectValues]);
+      });
+    }
+    const totalRowValues = Array.from({ length: leftColumns.length }, (_, index) => (index === 0 ? "合計 / 汇总" : ""));
+    writeRow([...totalRowValues, ...allDefects.map((item) => defectTotal(item.type) || "")], undefined, { fill: totalFill, bold: true });
+    writeRow(["最終不良 / 最终不良", report.defectQty, "二次検品良品戻し / 二检转良", report.recoveredQty, "二次確認不良 / 二次确认仍不良", report.confirmedFailedQty], undefined, { bold: true });
+
+    sectionTitle("カラー・サイズ別不良 / 颜色尺码不良");
+    writeRow(["カラー / 颜色", "サイズ / 尺码", "不良内容 / 问题", "数量", "最終結果 / 最终结果"], undefined, { fill: headerFill, bold: true });
+    if (report.colorSizeRows.length === 0) {
+      merge(worksheet.rowCount + 1, 1, columnCount, "不良記録なし / 暂无不良记录", { horizontal: "left" });
+    } else {
+      report.colorSizeRows.forEach((row) => writeRow([row.color, row.size, row.defectType, row.quantity, "最終不良 / 最终不良"]));
+    }
+
+    sectionTitle("二次検品記録 / 二次检品记录");
+    writeRow(["日時 / 日期", "工程 / 环节", "カラー / 颜色", "サイズ / 尺码", "不良内容 / 问题", "良品戻し / 转良", "再不良 / 仍不良", "備考 / 备注"], undefined, { fill: headerFill, bold: true });
+    if (reinspections.length === 0) {
+      merge(worksheet.rowCount + 1, 1, columnCount, "二次検品記録なし / 暂无二检记录", { horizontal: "left" });
+    } else {
+      reinspections.forEach((item) => writeRow([shortDate(item.created_at), stageText(item.inspection_stage), item.color || "-", item.size || "-", item.defect_type, item.passed_quantity, item.failed_quantity, item.remark || "-"]));
+    }
+
+    sectionTitle("不良品明細 / 不良品明细");
+    writeRow(["日付 / 日期", "工程 / 环节", "注文NO / 订单号", "品番 / 番号", "カラー / 颜色", "サイズ / 尺码", "不良内容 / 问题", "一次不良", "二検良品 / 二检转良", "最終不良 / 最终不良", "備考 / 备注"], undefined, { fill: headerFill, bold: true });
+    if (defectDetailRows.length === 0) {
+      merge(worksheet.rowCount + 1, 1, columnCount, "不良記録なし / 暂无不良记录", { horizontal: "left" });
+    } else {
+      defectDetailRows.forEach((record) =>
+        writeRow([shortDate(record.created_at), stageText(record.inspection_stage), order.po_number, order.sku, record.color || "-", record.size || "-", record.defect_type, record.quantity, record.recoveredQuantity, record.finalQuantity, record.remark || "-"])
+      );
+    }
+
+    sectionTitle("不良品写真 / 不良品图片");
+    writeRow(["日付 / 日期", "工程 / 环节", "注文NO / 订单号", "品番 / 番号", "カラー / 颜色", "サイズ / 尺码", "不良内容 / 问题", "数量", "備考 / 备注", "写真 / 图片"], undefined, { fill: headerFill, bold: true });
+    if (defectPhotoRows.length === 0) {
+      merge(worksheet.rowCount + 1, 1, columnCount, "写真なし / 暂无图片", { horizontal: "left" });
+    } else {
+      for (const record of defectPhotoRows) {
+        const rowNumber = writeRow([shortDate(record.created_at), stageText(record.inspection_stage), order.po_number, order.sku, record.color || "-", record.size || "-", record.defect_type, record.quantity, record.remark || "", ""]);
+        const row = worksheet.getRow(rowNumber);
+        row.height = 95;
+        worksheet.getColumn(10).width = 24;
         try {
-          const response = await fetch(record.photo_url, { cache: "force-cache" });
+          const response = await fetch(record.photo_url!, { cache: "force-cache" });
           if (!response.ok) throw new Error("Photo download failed");
           const blob = await response.blob();
-          const dataUrl = await new Promise<string>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(String(reader.result));
-            reader.onerror = () => reject(reader.error);
-            reader.readAsDataURL(blob);
+          const buffer = await blob.arrayBuffer();
+          const imageId = workbook.addImage({ buffer, extension: getImageExtension(blob.type) });
+          worksheet.addImage(imageId, {
+            tl: { col: 9.1, row: rowNumber - 0.9 },
+            ext: { width: 150, height: 105 },
+            editAs: "oneCell"
           });
-          photoSources.set(record.id, dataUrl);
         } catch {
-          photoSources.set(record.id, record.photo_url);
+          worksheet.getCell(rowNumber, 10).value = "图片加载失败";
         }
-      })
-    );
+      }
+    }
 
-    const html = `<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8" />
-  <style>
-    body { font-family: "Yu Gothic", "Meiryo", "Microsoft YaHei", Arial, sans-serif; }
-    table { border-collapse: collapse; table-layout: fixed; }
-    col.narrow { width: 28px; }
-    col.info { width: 58px; }
-    th, td {
-      border: 1px solid #000;
-      padding: 2px 3px;
-      font-size: 9px;
-      text-align: center;
-      vertical-align: middle;
-      mso-number-format:"\\@";
-      white-space: normal;
+    for (let column = 1; column <= columnCount; column += 1) {
+      const width = column === 10 ? 24 : column <= 11 ? 13 : Math.max(worksheet.getColumn(column).width ?? 8, 8);
+      worksheet.getColumn(column).width = width;
     }
-    .title { height: 30px; font-size: 15px; font-weight: 700; background: #fff; }
-    .info-label { background: #fff; font-weight: 700; text-align: left; }
-    .info-value { background: #fff; text-align: left; }
-    .group { background: #e7f3ff; font-weight: 700; }
-    .subgroup { background: #f4f9ff; font-weight: 700; }
-    .vertical { height: 178px; width: 24px; line-height: 1.08; font-weight: 700; }
-    .left-vertical { height: 178px; width: 34px; line-height: 1.08; font-weight: 700; }
-    .data-row td { height: 16px; }
-    .total { background: #eef6ff; font-weight: 700; }
-    .bad { color: #c00000; font-weight: 700; }
-    .good { color: #008000; font-weight: 700; }
-    .photo-row td { height: 92px; }
-    .photo-cell { padding: 4px; }
-    .photo-cell img { display: block; width: 112px; height: 84px; margin: 0 auto; object-fit: contain; }
-    .note { text-align: left; }
-    .no-border { border: none; }
-  </style>
-</head>
-<body>
-  <table>
-    <colgroup>
-      ${leftColumns.map(() => '<col style="width:42px" />').join("")}
-      ${allDefects.map(() => '<col class="narrow" />').join("")}
-      ${emptyCells(Math.max(0, columnCount - leftColumns.length - allDefects.length)).replaceAll("<td></td>", '<col class="narrow" />')}
-    </colgroup>
-    <tr><td class="title" colspan="${columnCount}">検品検針報告書　/　检品检针报告书</td></tr>
-    <tr>
-      ${spanCell("検品報告書NO", 2, "info-label")}
-      ${spanCell(order.po_number, 2, "info-value")}
-      ${spanCell("得意先 / 客户名称", 2, "info-label")}
-      ${spanCell(order.customer_name, 2, "info-value")}
-      ${spanCell("工場名 / 工厂名称", 3, "info-label")}
-      ${spanCell(order.factory_name, 4, "info-value")}
-      ${spanCell("検品日", 2, "info-label")}
-      ${spanCell(new Date().toLocaleDateString(), 3, "info-value")}
-      ${emptyCells(columnCount - 20)}
-    </tr>
-    <tr>
-      ${spanCell("ブランド名", 2, "info-label")}
-      ${spanCell("QCFlow", 2, "info-value")}
-      ${spanCell("注文NO / 订单号", 2, "info-label")}
-      ${spanCell(order.po_number, 2, "info-value")}
-      ${spanCell("品番 / 番号", 3, "info-label")}
-      ${spanCell(order.sku, 4, "info-value")}
-      ${spanCell("入荷日 / 来货日", 2, "info-label")}
-      ${spanCell(order.inbound_date ?? "-", 3, "info-value")}
-      ${emptyCells(columnCount - 20)}
-    </tr>
-    <tr>
-      ${spanCell("検品数量", 2, "info-label")}
-      ${spanCell(report.total, 2, "info-value")}
-      ${spanCell("出荷日 / 出货日", 2, "info-label")}
-      ${spanCell(order.shipping_date ?? "-", 2, "info-value")}
-      ${spanCell("不良数", 3, "info-label")}
-      ${spanCell(report.defectQty, 4, "info-value bad")}
-      ${spanCell("不良率", 2, "info-label")}
-      ${spanCell(report.rate, 3, "info-value bad")}
-      ${emptyCells(columnCount - 20)}
-    </tr>
-    <tr>
-      ${emptyCells(leftColumns.length)}
-      ${report.grouped.map((group) => spanHeader(group.group, group.items.length, "group")).join("")}
-      ${emptyCells(Math.max(0, columnCount - leftColumns.length - allDefects.length))}
-    </tr>
-    <tr>
-      ${leftColumns.map((label) => verticalExcelHeader(label, "left-vertical")).join("")}
-      ${allDefects.map((item) => verticalExcelHeader(item.type, "vertical")).join("")}
-      ${emptyCells(Math.max(0, columnCount - leftColumns.length - allDefects.length))}
-    </tr>
-    ${
-      detailRows.length === 0
-        ? `<tr class="data-row">${spanCell("不良記録なし / 暂无不良记录", columnCount, "note")}</tr>`
-        : detailRows
-            .map((record, index) => {
-              const left = [
-                excelCell(index + 1),
-                excelCell(order.sku),
-                excelCell(order.po_number),
-                excelCell(record.color || "-"),
-                excelCell(record.size || "-"),
-                excelCell(record.quantity),
-                excelCell(stageText(record.inspection_stage)),
-                excelCell(record.remark || "")
-              ].join("");
-              const defectCells = allDefects.map((item) => excelCell(item.type === record.defect_type ? record.finalQuantity || "" : "", item.type === record.defect_type ? "bad" : "")).join("");
-              return `<tr class="data-row">${left}${defectCells}${emptyCells(Math.max(0, columnCount - leftColumns.length - allDefects.length))}</tr>`;
-            })
-            .join("")
-    }
-    <tr class="total">
-      ${spanCell("合計 / 汇总", leftColumns.length)}
-      ${allDefects.map((item) => excelCell(defectTotal(item.type) || "")).join("")}
-      ${emptyCells(Math.max(0, columnCount - leftColumns.length - allDefects.length))}
-    </tr>
-    <tr>
-      ${spanCell("最終不良 / 最终不良", 5, "info-label")}
-      ${spanCell(report.defectQty, 3, "bad")}
-      ${spanCell("二次検品良品戻し / 二检转良", 6, "info-label")}
-      ${spanCell(report.recoveredQty, 3, "good")}
-      ${spanCell("二次確認不良 / 二次确认仍不良", 6, "info-label")}
-      ${spanCell(report.confirmedFailedQty, 3, "bad")}
-      ${emptyCells(columnCount - 26)}
-    </tr>
-    <tr>
-      ${spanCell("カラー・サイズ別不良 / 颜色尺码不良", columnCount, "subgroup")}
-    </tr>
-    <tr>
-      ${spanHeader("カラー / 颜色", 4)}
-      ${spanHeader("サイズ / 尺码", 4)}
-      ${spanHeader("不良内容 / 问题", 8)}
-      ${spanHeader("数量", 3)}
-      ${spanHeader("最終結果 / 最终结果", 5)}
-      ${emptyCells(columnCount - 24)}
-    </tr>
-    ${
-      report.colorSizeRows.length === 0
-        ? `<tr>${spanCell("不良記録なし / 暂无不良记录", columnCount, "note")}</tr>`
-        : report.colorSizeRows
-            .map(
-              (row) =>
-                `<tr>${spanCell(row.color, 4)}${spanCell(row.size, 4)}${spanCell(row.defectType, 8)}${spanCell(row.quantity, 3, "bad")}${spanCell("最終不良 / 最终不良", 5)}${emptyCells(columnCount - 24)}</tr>`
-            )
-            .join("")
-    }
-    <tr>
-      ${spanCell("二次検品記録 / 二次检品记录", columnCount, "subgroup")}
-    </tr>
-    <tr>
-      ${spanHeader("日時 / 日期", 4)}
-      ${spanHeader("工程 / 环节", 4)}
-      ${spanHeader("カラー / 颜色", 4)}
-      ${spanHeader("サイズ / 尺码", 4)}
-      ${spanHeader("不良内容 / 问题", 8)}
-      ${spanHeader("良品戻し / 转良", 4)}
-      ${spanHeader("再不良 / 仍不良", 4)}
-      ${spanHeader("備考 / 备注", 8)}
-      ${emptyCells(columnCount - 40)}
-    </tr>
-    ${
-      reinspections.length === 0
-        ? `<tr>${spanCell("二次検品記録なし / 暂无二检记录", columnCount, "note")}</tr>`
-        : reinspections
-            .map(
-              (item) =>
-                `<tr>${spanCell(shortDate(item.created_at), 4)}${spanCell(stageText(item.inspection_stage), 4)}${spanCell(item.color || "-", 4)}${spanCell(item.size || "-", 4)}${spanCell(item.defect_type, 8)}${spanCell(item.passed_quantity, 4, "good")}${spanCell(item.failed_quantity, 4, "bad")}${spanCell(item.remark || "-", 8)}${emptyCells(columnCount - 40)}</tr>`
-            )
-            .join("")
-    }
-    <tr>
-      ${spanCell("不良品明細 / 不良品明细", columnCount, "subgroup")}
-    </tr>
-    <tr>
-      ${spanHeader("日付 / 日期", 4)}
-      ${spanHeader("工程 / 环节", 4)}
-      ${spanHeader("注文NO / 订单号", 5)}
-      ${spanHeader("品番 / 番号", 5)}
-      ${spanHeader("カラー / 颜色", 5)}
-      ${spanHeader("サイズ / 尺码", 4)}
-      ${spanHeader("不良内容 / 问题", 8)}
-      ${spanHeader("一次不良", 3)}
-      ${spanHeader("二検良品 / 二检转良", 3)}
-      ${spanHeader("最終不良 / 最终不良", 3)}
-      ${spanHeader("備考 / 备注", 15)}
-      ${emptyCells(columnCount - 52)}
-    </tr>
-    ${
-      defectDetailRows.length === 0
-        ? `<tr>${spanCell("不良記録なし / 暂无不良记录", columnCount, "note")}</tr>`
-        : defectDetailRows
-            .map((record) => {
-              return `<tr>${spanCell(shortDate(record.created_at), 4)}${spanCell(stageText(record.inspection_stage), 4)}${spanCell(order.po_number, 5)}${spanCell(order.sku, 5)}${spanCell(record.color || "-", 5)}${spanCell(record.size || "-", 4)}${spanCell(record.defect_type, 8)}${spanCell(record.quantity, 3, "bad")}${spanCell(record.recoveredQuantity, 3, "good")}${spanCell(record.finalQuantity, 3, record.finalQuantity > 0 ? "bad" : "good")}${spanCell(record.remark || "-", 15)}${emptyCells(columnCount - 52)}</tr>`;
-            })
-            .join("")
-    }
-    <tr>
-      ${spanCell("不良品写真 / 不良品图片", columnCount, "subgroup")}
-    </tr>
-    <tr>
-      ${spanHeader("日付 / 日期", 4)}
-      ${spanHeader("工程 / 环节", 4)}
-      ${spanHeader("注文NO / 订单号", 5)}
-      ${spanHeader("品番 / 番号", 5)}
-      ${spanHeader("カラー / 颜色", 5)}
-      ${spanHeader("サイズ / 尺码", 4)}
-      ${spanHeader("不良内容 / 问题", 8)}
-      ${spanHeader("数量", 3)}
-      ${spanHeader("備考 / 备注", 10)}
-      ${spanHeader("写真 / 图片", 11)}
-      ${emptyCells(columnCount - 59)}
-    </tr>
-    ${
-      defectPhotoRows.length === 0
-        ? `<tr>${spanCell("写真なし / 暂无图片", columnCount, "note")}</tr>`
-        : defectPhotoRows
-            .map((record) => {
-              const photoSource = photoSources.get(record.id) ?? record.photo_url ?? "";
-              const imageCell = `<td colspan="11" class="photo-cell"><img src="${excelEscape(photoSource)}" alt="${excelEscape(record.defect_type)}" /></td>`;
-              return `<tr class="photo-row">${spanCell(shortDate(record.created_at), 4)}${spanCell(stageText(record.inspection_stage), 4)}${spanCell(order.po_number, 5)}${spanCell(order.sku, 5)}${spanCell(record.color || "-", 5)}${spanCell(record.size || "-", 4)}${spanCell(record.defect_type, 8)}${spanCell(record.quantity, 3, "bad")}${spanCell(record.remark || "-", 10)}${imageCell}${emptyCells(columnCount - 59)}</tr>`;
-            })
-            .join("")
-    }
-  </table>
-</body>
-</html>`;
 
-    const blob = new Blob(["\ufeff", html], { type: "application/vnd.ms-excel;charset=utf-8" });
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `検品検針報告書-${order.po_number || "report"}.xls`;
+    link.download = `検品検針報告書-${order.po_number || "report"}.xlsx`;
     document.body.appendChild(link);
     link.click();
     link.remove();
