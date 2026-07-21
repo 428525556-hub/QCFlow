@@ -5,7 +5,7 @@ import { updateOrder } from "@/src/api/ordersApi";
 import { deleteShipmentCarton, getShipmentOrderData, insertShipmentCarton, insertShipmentItems } from "@/src/api/shipmentApi";
 import { getCurrentUser } from "@/src/api/userApi";
 import type { Order, OrderItem, ShipmentCarton, ShipmentItem, UnboxingRecord } from "@/lib/types";
-import { AlertTriangle, ArrowLeft, CheckCircle2, Download, Package, Plus, Save, Trash2 } from "lucide-react";
+import { AlertTriangle, ArrowLeft, CheckCircle2, Download, Package, Plus, Save, Trash2, X } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -57,6 +57,7 @@ export default function ShipOrderPage() {
   const [cartonNo, setCartonNo] = useState("");
   const [remark, setRemark] = useState("");
   const [rows, setRows] = useState<DraftRow[]>([]);
+  const [editorOpen, setEditorOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
@@ -171,6 +172,9 @@ export default function ShipOrderPage() {
     return { opened, packed, pending: opened - packed };
   }, [unboxedCartonGroups]);
 
+  const selectedUnboxedGroup = useMemo(() => unboxedCartonGroups.find((group) => group.cartonNo === cartonNo.trim()) ?? null, [cartonNo, unboxedCartonGroups]);
+  const existingCartonForEditor = useMemo(() => cartons.find((carton) => carton.carton_no.trim() === cartonNo.trim()) ?? null, [cartonNo, cartons]);
+
   const totals = useMemo(() => {
     const planned = items.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
     const inbound = items.reduce((sum, item) => sum + Number(item.inbound_quantity || 0), 0);
@@ -236,38 +240,50 @@ export default function ShipOrderPage() {
     if (nextRows.length > 0) setRows(nextRows);
     const notes = Array.from(new Set(matchedRecords.map((record) => record.remark).filter(Boolean)));
     if (notes.length > 0) setRemark(notes.join(" / "));
+    setEditorOpen(true);
   }
 
-  async function saveCarton() {
-    if (!order) return;
+  function openManualEditor() {
+    setCartonNo("");
+    setRemark("");
+    setRows([newDraftRow(items)]);
+    setEditorOpen(true);
+  }
+
+  function isShortPacked(group: { quantity: number; shortage: number; packedQuantity: number; packed: boolean }) {
+    return group.packed && (group.shortage > 0 || group.packedQuantity < group.quantity || group.packedQuantity < 10);
+  }
+
+  async function saveCarton(closeAfterSave = false) {
+    if (!order) return false;
     setMessage("");
 
     const cleanCartonNo = cartonNo.trim();
     const cleanRows = rows.filter((row) => row.color && row.size && Number(row.quantity) > 0);
     if (!cleanCartonNo) {
       setMessage("请先输入箱号。");
-      return;
+      return false;
     }
     if (cleanRows.length === 0) {
       setMessage("请至少填写一行颜色、尺码和数量。");
-      return;
+      return false;
     }
     if (cartons.some((carton) => carton.carton_no.trim() === cleanCartonNo)) {
       setMessage("这个箱号已经装箱过了，请选择其他箱号，或先删除原来的装箱记录。");
-      return;
+      return false;
     }
 
     const hasUnboxingCartons = unboxedCartonGroups.length > 0;
     const existsInUnboxing = unboxedCartonGroups.some((group) => group.cartonNo === cleanCartonNo);
     if (hasUnboxingCartons && !existsInUnboxing) {
       const ok = window.confirm("这个箱号不在开箱记录里，确认作为额外箱号装箱吗？");
-      if (!ok) return;
+      if (!ok) return false;
     }
 
     const nextMissingCartonNos = findMissingCartonNos([...cartons.map((carton) => carton.carton_no), cleanCartonNo]);
     if (nextMissingCartonNos.length > 0) {
       const ok = window.confirm(`当前箱号中间缺少：${nextMissingCartonNos.join("、")}。确认继续保存吗？`);
-      if (!ok) return;
+      if (!ok) return false;
     }
 
     const draftBySku = new Map<string, number>();
@@ -280,11 +296,11 @@ export default function ShipOrderPage() {
       const summary = itemSummary.find((item) => itemKey(item.color, item.size) === key);
       if (!summary) {
         setMessage("颜色或尺码不在这个订单里，请重新选择。");
-        return;
+        return false;
       }
       if (qty > summary.remaining) {
         setMessage(`${summary.color} / ${summary.size} 本次装箱 ${qty}，超过剩余 ${summary.remaining}。`);
-        return;
+        return false;
       }
     }
 
@@ -294,7 +310,7 @@ export default function ShipOrderPage() {
     if (!userId) {
       setMessage("登录状态已失效，请重新登录。");
       setSaving(false);
-      return;
+      return false;
     }
 
     const { data: carton, error: cartonError } = await insertShipmentCarton({
@@ -307,7 +323,7 @@ export default function ShipOrderPage() {
     if (cartonError || !carton) {
       setMessage(`${cartonError?.message ?? "保存箱号失败"}。请确认 Supabase 已执行最新 schema.sql。`);
       setSaving(false);
-      return;
+      return false;
     }
 
     const shipmentRows = cleanRows.map((row) => {
@@ -329,14 +345,16 @@ export default function ShipOrderPage() {
       await deleteShipmentCarton(carton.id);
       setMessage(`${itemError.message}。请确认 Supabase 已执行最新 schema.sql。`);
       setSaving(false);
-      return;
+      return false;
     }
 
     setCartonNo("");
     setRemark("");
     setRows([newDraftRow(items)]);
     await load();
+    if (closeAfterSave) setEditorOpen(false);
     setSaving(false);
+    return true;
   }
 
   async function deleteCarton(cartonId: string) {
@@ -710,6 +728,128 @@ export default function ShipOrderPage() {
 
       {message && <p className="rounded bg-red-50 px-3 py-2 text-sm font-bold text-red-700">{message}</p>}
 
+      {editorOpen && (
+        <div className="fixed inset-0 z-50 flex items-end bg-slate-950/45 p-0 md:items-center md:justify-center md:p-6">
+          <section className="max-h-[92vh] w-full overflow-hidden rounded-t border border-blue-200 bg-white shadow-2xl md:max-w-2xl md:rounded">
+            <div className="flex items-start justify-between gap-3 border-b border-blue-100 bg-blue-50 px-4 py-3">
+              <div className="min-w-0">
+                <p className="text-xs font-black text-blue-700">箱号装箱</p>
+                <h2 className="truncate text-xl font-black text-blue-950">箱号 {cartonNo || "手动新增"}</h2>
+                {selectedUnboxedGroup && (
+                  <p className="mt-1 text-xs font-bold text-slate-600">
+                    开箱 {selectedUnboxedGroup.quantity} 双 / 已装 {selectedUnboxedGroup.packedQuantity} 双
+                    {selectedUnboxedGroup.shortage > 0 ? ` / 少 ${selectedUnboxedGroup.shortage} 双` : ""}
+                  </p>
+                )}
+              </div>
+              <button type="button" onClick={() => setEditorOpen(false)} className="grid h-10 w-10 shrink-0 place-items-center rounded border border-blue-200 bg-white text-slate-600" aria-label="关闭">
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="max-h-[calc(92vh-150px)] space-y-4 overflow-y-auto px-4 py-4">
+              {existingCartonForEditor && (
+                <p className="rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-bold text-emerald-800">
+                  这个箱号已经完成装箱。如需修改，请先在下方箱号明细里删除原装箱记录后重新装箱。
+                </p>
+              )}
+              {selectedUnboxedGroup && selectedUnboxedGroup.quantity < 10 && (
+                <p className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm font-bold text-red-700">当前箱号开箱数量少于 10 双，完成后会标记为短装。</p>
+              )}
+
+              <div className="grid gap-3 md:grid-cols-2">
+                <label className="space-y-1">
+                  <span className="label">箱号</span>
+                  <input className="field" value={cartonNo} onChange={(event) => setCartonNo(event.target.value)} placeholder="例如 1 / A001" disabled={Boolean(existingCartonForEditor)} />
+                </label>
+                <label className="space-y-1">
+                  <span className="label">备注</span>
+                  <input className="field" value={remark} onChange={(event) => setRemark(event.target.value)} placeholder="可不填" disabled={Boolean(existingCartonForEditor)} />
+                </label>
+              </div>
+
+              <div className="space-y-3">
+                {rows.map((row) => {
+                  const sizeOptions = sizesForColor(row.color);
+                  const summary = itemSummary.find((item) => item.color === row.color && item.size === row.size);
+                  return (
+                    <div key={row.id} className="rounded border border-line bg-blue-50 p-3">
+                      <div className="grid grid-cols-2 gap-2">
+                        <label className="space-y-1">
+                          <span className="label">颜色</span>
+                          <select className="field" value={row.color} onChange={(event) => updateRow(row.id, { color: event.target.value })} disabled={Boolean(existingCartonForEditor)}>
+                            {colors.map((color) => (
+                              <option key={color} value={color}>
+                                {color}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="space-y-1">
+                          <span className="label">尺码</span>
+                          <select className="field" value={row.size} onChange={(event) => updateRow(row.id, { size: event.target.value })} disabled={Boolean(existingCartonForEditor)}>
+                            {sizeOptions.map((size) => (
+                              <option key={size} value={size}>
+                                {size}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      </div>
+                      <div className="mt-2 grid grid-cols-[1fr_auto] gap-2">
+                        <label className="space-y-1">
+                          <span className="label">数量</span>
+                          <input className="field" type="number" min={1} value={row.quantity} onChange={(event) => updateRow(row.id, { quantity: Number(event.target.value) })} disabled={Boolean(existingCartonForEditor)} />
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => removeRow(row.id)}
+                          disabled={Boolean(existingCartonForEditor)}
+                          className="mt-6 inline-flex h-12 w-12 items-center justify-center rounded border border-red-200 bg-white text-red-700 disabled:opacity-40"
+                        >
+                          <Trash2 size={18} />
+                        </button>
+                      </div>
+                      <div className="mt-2 grid grid-cols-3 gap-2">
+                        {[10, 5, 15].map((preset) => (
+                          <button
+                            key={preset}
+                            type="button"
+                            onClick={() => setRowQuantity(row.id, preset)}
+                            disabled={Boolean(existingCartonForEditor)}
+                            className={`rounded border px-3 py-2 text-sm font-black disabled:opacity-40 ${
+                              row.quantity === preset ? "border-blue-500 bg-blue-600 text-white" : "border-blue-200 bg-white text-blue-800"
+                            }`}
+                          >
+                            {preset} 双
+                          </button>
+                        ))}
+                      </div>
+                      <p className="mt-2 text-xs font-bold text-blue-700">这个颜色尺码剩余可装：{summary?.remaining ?? 0}</p>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <button type="button" onClick={addRow} disabled={Boolean(existingCartonForEditor)} className="secondary-btn w-full disabled:opacity-40">
+                <Plus size={18} />
+                加一行
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 border-t border-blue-100 bg-white px-4 py-3">
+              <button type="button" onClick={() => setEditorOpen(false)} className="secondary-btn">
+                取消
+              </button>
+              <button type="button" onClick={() => saveCarton(true)} disabled={saving || Boolean(existingCartonForEditor)} className="primary-btn disabled:opacity-50">
+                <Save size={18} />
+                {saving ? "保存中" : "完成装箱"}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
       <div className="grid grid-cols-3 gap-2 text-center">
         <div className="rounded border border-blue-200 bg-white p-3">
           <p className="text-xs font-bold text-slate-500">已入</p>
@@ -757,26 +897,37 @@ export default function ShipOrderPage() {
           </p>
         ) : (
           <div className="mt-3 grid gap-2 md:grid-cols-2">
-            {unboxedCartonGroups.map((group) => (
-              <button
-                key={group.cartonNo}
-                type="button"
-                onClick={() => applyUnboxedCarton(group.cartonNo)}
-                className={`rounded border p-3 text-left transition ${
-                  group.packed ? "border-emerald-200 bg-emerald-50 text-emerald-900" : "border-blue-200 bg-white text-blue-950 hover:border-blue-400"
-                }`}
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-base font-black">箱号 {group.cartonNo}</span>
-                  <span className={`rounded px-2 py-1 text-xs font-black ${group.packed ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
-                    {group.packed ? "已装" : "未装"}
-                  </span>
-                </div>
-                <p className="mt-1 text-xs font-bold text-slate-600">
-                  开箱 {group.quantity} 双 / 装箱 {group.packedQuantity} 双{group.shortage > 0 ? ` / 少 ${group.shortage} 双` : ""}
-                </p>
-              </button>
-            ))}
+            {unboxedCartonGroups.map((group) => {
+              const shortPacked = isShortPacked(group);
+              return (
+                <button
+                  key={group.cartonNo}
+                  type="button"
+                  onClick={() => applyUnboxedCarton(group.cartonNo)}
+                  className={`rounded border p-3 text-left transition ${
+                    shortPacked
+                      ? "border-red-300 bg-red-50 text-red-900"
+                      : group.packed
+                        ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+                        : "border-blue-200 bg-white text-blue-950 hover:border-blue-400"
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-base font-black">箱号 {group.cartonNo}</span>
+                    <span
+                      className={`rounded px-2 py-1 text-xs font-black ${
+                        shortPacked ? "bg-red-100 text-red-700" : group.packed ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"
+                      }`}
+                    >
+                      {shortPacked ? "短装" : group.packed ? "已装" : "未装"}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-xs font-bold text-slate-600">
+                    开箱 {group.quantity} 双 / 装箱 {group.packedQuantity} 双{group.shortage > 0 ? ` / 少 ${group.shortage} 双` : ""}
+                  </p>
+                </button>
+              );
+            })}
           </div>
         )}
       </section>
@@ -860,7 +1011,7 @@ export default function ShipOrderPage() {
             <Plus size={18} />
             加一行
           </button>
-          <button type="button" onClick={saveCarton} disabled={saving} className="primary-btn">
+          <button type="button" onClick={() => saveCarton()} disabled={saving} className="primary-btn">
             <Save size={18} />
             {saving ? "保存中" : "保存箱号"}
           </button>
@@ -883,16 +1034,25 @@ export default function ShipOrderPage() {
           </div>
         )}
         {cartons.length === 0 && <div className="panel p-4 text-sm text-slate-500">还没有装箱箱号。</div>}
-        {sortedCartons.map((carton) => (
-          <article key={carton.id} className="panel p-4">
+        {sortedCartons.map((carton) => {
+          const cartonQuantity = carton.items.reduce((sum, item) => sum + item.quantity, 0);
+          const sourceGroup = unboxedCartonGroups.find((group) => group.cartonNo === carton.carton_no.trim());
+          const shortPacked = sourceGroup ? isShortPacked(sourceGroup) : cartonQuantity < 10;
+          return (
+          <article key={carton.id} className={`panel p-4 ${shortPacked ? "border-red-300 bg-red-50" : "border-emerald-200 bg-emerald-50"}`}>
             <div className="flex items-start justify-between gap-3">
               <div>
-                <h3 className="text-lg font-black text-blue-950">箱号 {carton.carton_no}</h3>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className={`text-lg font-black ${shortPacked ? "text-red-900" : "text-emerald-900"}`}>箱号 {carton.carton_no}</h3>
+                  <span className={`rounded px-2 py-1 text-xs font-black ${shortPacked ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700"}`}>
+                    {shortPacked ? "短装" : "已装"}
+                  </span>
+                </div>
                 <p className="text-sm text-slate-500">
-                  {carton.items.reduce((sum, item) => sum + item.quantity, 0)} 双{carton.remark ? `/ ${carton.remark}` : ""}
+                  {cartonQuantity} 双{carton.remark ? `/ ${carton.remark}` : ""}
                 </p>
               </div>
-              <button type="button" onClick={() => deleteCarton(carton.id)} className="inline-flex h-10 w-10 items-center justify-center rounded border border-red-200 text-red-700">
+              <button type="button" onClick={() => deleteCarton(carton.id)} className="inline-flex h-10 w-10 items-center justify-center rounded border border-red-200 bg-white text-red-700">
                 <Trash2 size={18} />
               </button>
             </div>
@@ -907,7 +1067,8 @@ export default function ShipOrderPage() {
               ))}
             </div>
           </article>
-        ))}
+          );
+        })}
       </section>
     </div>
   );
