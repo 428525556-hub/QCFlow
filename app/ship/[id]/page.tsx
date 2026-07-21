@@ -21,6 +21,18 @@ type DraftRow = {
   quantity: number;
 };
 
+type UnboxedSkuProgress = {
+  key: string;
+  color: string;
+  size: string;
+  openedCartons: number;
+  packedCartons: number;
+  pendingCartons: number;
+  openedQuantity: number;
+  packedQuantity: number;
+  pendingQuantity: number;
+};
+
 function newDraftRow(items: OrderItem[]): DraftRow {
   const first = items[0];
   return {
@@ -171,6 +183,68 @@ export default function ShipOrderPage() {
     const packed = unboxedCartonGroups.filter((group) => group.packed).length;
     return { opened, packed, pending: opened - packed };
   }, [unboxedCartonGroups]);
+
+  const unboxedSkuProgress = useMemo<UnboxedSkuProgress[]>(() => {
+    const map = new Map<
+      string,
+      {
+        color: string;
+        size: string;
+        openedCartonNos: Set<string>;
+        packedCartonNos: Set<string>;
+        pendingCartonNos: Set<string>;
+        openedQuantity: number;
+        packedQuantity: number;
+        pendingQuantity: number;
+      }
+    >();
+
+    for (const record of unboxingRecords) {
+      const cartonKey = record.carton_no.trim();
+      if (!cartonKey) continue;
+
+      const key = itemKey(record.color, record.size);
+      const current =
+        map.get(key) ??
+        ({
+          color: record.color,
+          size: record.size,
+          openedCartonNos: new Set<string>(),
+          packedCartonNos: new Set<string>(),
+          pendingCartonNos: new Set<string>(),
+          openedQuantity: 0,
+          packedQuantity: 0,
+          pendingQuantity: 0
+        });
+      const quantity = Number(record.quantity || 0);
+      const packed = packedQuantityByCartonNo.has(cartonKey);
+
+      current.openedCartonNos.add(cartonKey);
+      current.openedQuantity += quantity;
+      if (packed) {
+        current.packedCartonNos.add(cartonKey);
+        current.packedQuantity += quantity;
+      } else {
+        current.pendingCartonNos.add(cartonKey);
+        current.pendingQuantity += quantity;
+      }
+      map.set(key, current);
+    }
+
+    return Array.from(map.entries())
+      .map(([key, row]) => ({
+        key,
+        color: row.color,
+        size: row.size,
+        openedCartons: row.openedCartonNos.size,
+        packedCartons: row.packedCartonNos.size,
+        pendingCartons: row.pendingCartonNos.size,
+        openedQuantity: row.openedQuantity,
+        packedQuantity: row.packedQuantity,
+        pendingQuantity: row.pendingQuantity
+      }))
+      .sort((a, b) => a.color.localeCompare(b.color, "zh-Hans-CN") || a.size.localeCompare(b.size, "zh-Hans-CN", { numeric: true }));
+  }, [packedQuantityByCartonNo, unboxingRecords]);
 
   const selectedUnboxedGroup = useMemo(() => unboxedCartonGroups.find((group) => group.cartonNo === cartonNo.trim()) ?? null, [cartonNo, unboxedCartonGroups]);
   const existingCartonForEditor = useMemo(() => cartons.find((carton) => carton.carton_no.trim() === cartonNo.trim()) ?? null, [cartonNo, cartons]);
@@ -890,6 +964,39 @@ export default function ShipOrderPage() {
             <p className="text-lg font-black text-amber-700">{unboxedStats.pending}</p>
           </div>
         </div>
+
+        {unboxedSkuProgress.length > 0 && (
+          <div className="mt-3 overflow-hidden rounded border border-blue-100 bg-white">
+            <div className="grid grid-cols-[1.2fr_0.8fr_0.8fr_0.8fr] bg-blue-50 text-xs font-black text-blue-950">
+              <div className="border-r border-blue-100 px-2 py-2 text-left">颜色 / 尺码</div>
+              <div className="border-r border-blue-100 px-2 py-2 text-center">已开箱</div>
+              <div className="border-r border-blue-100 px-2 py-2 text-center">已装箱</div>
+              <div className="px-2 py-2 text-center">未装箱</div>
+            </div>
+            <div className="divide-y divide-blue-50">
+              {unboxedSkuProgress.map((row) => (
+                <div key={row.key} className="grid grid-cols-[1.2fr_0.8fr_0.8fr_0.8fr] text-sm">
+                  <div className="border-r border-blue-50 px-2 py-2">
+                    <p className="font-black text-blue-950">{row.color || "-"}</p>
+                    <p className="text-xs font-bold text-slate-500">{row.size || "-"}</p>
+                  </div>
+                  <div className="border-r border-blue-50 px-2 py-2 text-center">
+                    <p className="font-black text-blue-950">{row.openedCartons} 箱</p>
+                    <p className="text-xs text-slate-500">{row.openedQuantity} 双</p>
+                  </div>
+                  <div className="border-r border-blue-50 px-2 py-2 text-center">
+                    <p className="font-black text-emerald-700">{row.packedCartons} 箱</p>
+                    <p className="text-xs text-slate-500">{row.packedQuantity} 双</p>
+                  </div>
+                  <div className={`px-2 py-2 text-center ${row.pendingCartons > 0 ? "bg-amber-50" : ""}`}>
+                    <p className={`font-black ${row.pendingCartons > 0 ? "text-amber-700" : "text-slate-400"}`}>{row.pendingCartons} 箱</p>
+                    <p className="text-xs text-slate-500">{row.pendingQuantity} 双</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {unboxedCartonGroups.length === 0 ? (
           <p className="mt-3 rounded border border-dashed border-blue-200 bg-blue-50 px-3 py-3 text-sm font-bold text-blue-700">
