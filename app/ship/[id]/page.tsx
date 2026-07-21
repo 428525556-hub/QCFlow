@@ -8,7 +8,7 @@ import type { Order, OrderItem, ShipmentCarton, ShipmentItem, UnboxingRecord } f
 import { AlertTriangle, ArrowLeft, CheckCircle2, Download, Package, Plus, Save, Trash2, X } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type CartonWithItems = ShipmentCarton & {
   items: ShipmentItem[];
@@ -73,9 +73,11 @@ export default function ShipOrderPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
+  const pendingScrollCartonNoRef = useRef<string | null>(null);
+  const unboxedCartonRefs = useRef(new Map<string, HTMLButtonElement>());
 
-  const load = useCallback(async function loadShipment() {
-    setLoading(true);
+  const load = useCallback(async function loadShipment(showLoading = true) {
+    if (showLoading) setLoading(true);
     const { data } = await getShipmentOrderData(orderId);
 
     const orderItems = (data.items ?? []) as OrderItem[];
@@ -182,6 +184,19 @@ export default function ShipOrderPage() {
     const opened = unboxedCartonGroups.length;
     const packed = unboxedCartonGroups.filter((group) => group.packed).length;
     return { opened, packed, pending: opened - packed };
+  }, [unboxedCartonGroups]);
+
+  useEffect(() => {
+    const cartonNoToScroll = pendingScrollCartonNoRef.current;
+    if (!cartonNoToScroll) return;
+
+    const target = unboxedCartonRefs.current.get(cartonNoToScroll);
+    if (!target) return;
+
+    pendingScrollCartonNoRef.current = null;
+    window.requestAnimationFrame(() => {
+      target.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
   }, [unboxedCartonGroups]);
 
   const unboxedSkuProgress = useMemo<UnboxedSkuProgress[]>(() => {
@@ -425,7 +440,8 @@ export default function ShipOrderPage() {
     setCartonNo("");
     setRemark("");
     setRows([newDraftRow(items)]);
-    await load();
+    pendingScrollCartonNoRef.current = cleanCartonNo;
+    await load(false);
     if (closeAfterSave) setEditorOpen(false);
     setSaving(false);
     return true;
@@ -1009,6 +1025,13 @@ export default function ShipOrderPage() {
               return (
                 <button
                   key={group.cartonNo}
+                  ref={(element) => {
+                    if (element) {
+                      unboxedCartonRefs.current.set(group.cartonNo, element);
+                    } else {
+                      unboxedCartonRefs.current.delete(group.cartonNo);
+                    }
+                  }}
                   type="button"
                   onClick={() => applyUnboxedCarton(group.cartonNo)}
                   className={`rounded border p-3 text-left transition ${
