@@ -172,7 +172,10 @@ export default function ReportPage() {
     const emptyCells = (count: number) => Array.from({ length: count }, () => "<td></td>").join("");
     const spanCell = (value: string | number | null | undefined, colspan: number, className = "") => `<td colspan="${colspan}" class="${className}">${excelEscape(value)}</td>`;
     const spanHeader = (value: string | number | null | undefined, colspan: number, className = "") => `<th colspan="${colspan}" class="${className}">${excelEscape(value)}</th>`;
+    const spanLinkCell = (value: string, href: string, colspan: number, className = "") =>
+      `<td colspan="${colspan}" class="${className}"><a href="${excelEscape(href)}">${excelEscape(value)}</a></td>`;
     const defectTotal = (type: string) => detailRows.filter((record) => record.defect_type === type).reduce((sum, record) => sum + record.finalQuantity, 0);
+    const defectDetailRows = report.finalRecordRows.filter((record) => Number(record.quantity || 0) > 0 || Boolean(record.photo_url));
 
     const html = `<!doctype html>
 <html>
@@ -203,6 +206,7 @@ export default function ReportPage() {
     .total { background: #eef6ff; font-weight: 700; }
     .bad { color: #c00000; font-weight: 700; }
     .good { color: #008000; font-weight: 700; }
+    .link a { color: #0563c1; text-decoration: underline; font-weight: 700; }
     .note { text-align: left; }
     .no-border { border: none; }
   </style>
@@ -335,6 +339,34 @@ export default function ReportPage() {
               (item) =>
                 `<tr>${spanCell(shortDate(item.created_at), 4)}${spanCell(stageText(item.inspection_stage), 4)}${spanCell(item.color || "-", 4)}${spanCell(item.size || "-", 4)}${spanCell(item.defect_type, 8)}${spanCell(item.passed_quantity, 4, "good")}${spanCell(item.failed_quantity, 4, "bad")}${spanCell(item.remark || "-", 8)}${emptyCells(columnCount - 40)}</tr>`
             )
+            .join("")
+    }
+    <tr>
+      ${spanCell("不良品明細 / 不良品明细", columnCount, "subgroup")}
+    </tr>
+    <tr>
+      ${spanHeader("日付 / 日期", 4)}
+      ${spanHeader("工程 / 环节", 4)}
+      ${spanHeader("注文NO / 订单号", 5)}
+      ${spanHeader("品番 / 番号", 5)}
+      ${spanHeader("カラー / 颜色", 5)}
+      ${spanHeader("サイズ / 尺码", 4)}
+      ${spanHeader("不良内容 / 问题", 8)}
+      ${spanHeader("一次不良", 3)}
+      ${spanHeader("二検良品 / 二检转良", 3)}
+      ${spanHeader("最終不良 / 最终不良", 3)}
+      ${spanHeader("備考 / 备注", 8)}
+      ${spanHeader("写真 / 图片", 7)}
+      ${emptyCells(columnCount - 59)}
+    </tr>
+    ${
+      defectDetailRows.length === 0
+        ? `<tr>${spanCell("不良記録なし / 暂无不良记录", columnCount, "note")}</tr>`
+        : defectDetailRows
+            .map((record) => {
+              const imageCell = record.photo_url ? spanLinkCell("查看图片 / 写真", record.photo_url, 7, "link") : spanCell("-", 7);
+              return `<tr>${spanCell(shortDate(record.created_at), 4)}${spanCell(stageText(record.inspection_stage), 4)}${spanCell(order.po_number, 5)}${spanCell(order.sku, 5)}${spanCell(record.color || "-", 5)}${spanCell(record.size || "-", 4)}${spanCell(record.defect_type, 8)}${spanCell(record.quantity, 3, "bad")}${spanCell(record.recoveredQuantity, 3, "good")}${spanCell(record.finalQuantity, 3, record.finalQuantity > 0 ? "bad" : "good")}${spanCell(record.remark || "-", 8)}${imageCell}${emptyCells(columnCount - 59)}</tr>`;
+            })
             .join("")
     }
   </table>
