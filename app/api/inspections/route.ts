@@ -1,6 +1,6 @@
 import { apiSuccess } from "@/src/server/apiResponse";
 import { withApiHandler } from "@/src/server/apiHandler";
-import { databaseError } from "@/src/server/errors";
+import { ApiError, databaseError } from "@/src/server/errors";
 import { createRequestSupabaseClient, requireRequestUser } from "@/src/server/supabaseServer";
 import type { Database, InspectionStage } from "@/src/types";
 
@@ -37,3 +37,14 @@ export const POST = withApiHandler(async (request) => {
   return apiSuccess(data, 201);
 });
 
+export const DELETE = withApiHandler(async (request) => {
+  await requireRequestUser(request);
+  const id = request.nextUrl.searchParams.get("id");
+  if (!id) throw new ApiError("id is required", 400, "VALIDATION_ERROR");
+
+  const supabase = createRequestSupabaseClient(request);
+  const { data, error } = await supabase.from("inspection_records").delete().eq("id", id).select("id").single();
+
+  if (error) throw databaseError(error);
+  return apiSuccess(data);
+});

@@ -3,12 +3,12 @@
 import { useCurrentUser } from "@/components/AuthGuard";
 import { StatusBadge } from "@/components/StatusBadge";
 import { shortDate } from "@/lib/format";
-import { getInspectionPhotoPublicUrl, getInspectionWorkspaceData, insertInspectionRecord, uploadInspectionPhoto } from "@/src/api/inspectionApi";
+import { deleteInspectionRecord, getInspectionPhotoPublicUrl, getInspectionWorkspaceData, insertInspectionRecord, uploadInspectionPhoto } from "@/src/api/inspectionApi";
 import { insertOrderAttachments, uploadOrderAttachmentFile } from "@/src/api/orderAttachmentsApi";
 import { updateOrder } from "@/src/api/ordersApi";
 import { compressImageFile, createSafeId, formatMb, safeFileName, withTimeout } from "@/src/utils";
 import type { DefectGroup, InspectionRecord, InspectionStage, Order, OrderAttachment, OrderItem } from "@/lib/types";
-import { Camera, CheckCircle2, ExternalLink, FileSpreadsheet, FileText, Minus, Plus, Save, Upload } from "lucide-react";
+import { Camera, CheckCircle2, ExternalLink, FileSpreadsheet, FileText, Minus, Plus, Save, Trash2, Upload } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
@@ -262,6 +262,22 @@ export function InspectionWorkspace({ orderId, stage, title, subtitle, groups }:
     router.push(`/report/${orderId}`);
   }
 
+  async function removeRecord(record: InspectionRecord) {
+    if (stage !== "xray") return;
+    const ok = window.confirm(`确定删除这条 X线不良记录吗？\n${record.defect_type} x ${record.quantity}`);
+    if (!ok) return;
+
+    setMessage("");
+    const { error } = await deleteInspectionRecord(record.id);
+    if (error) {
+      setMessage(`${error.message}。请确认 Supabase 已执行最新 staff_shared_access.sql。`);
+      return;
+    }
+
+    setRecords((current) => current.filter((item) => item.id !== record.id));
+    setMessage("X线不良记录已删除。");
+  }
+
   if (!order) {
     return <div className="panel p-5 text-sm text-slate-500">正在加载任务...</div>;
   }
@@ -509,7 +525,19 @@ export function InspectionWorkspace({ orderId, stage, title, subtitle, groups }:
               <div className="min-w-0 flex-1">
                 <div className="flex items-center justify-between gap-2">
                   <p className="font-black">{record.defect_type}</p>
-                  <p className="font-black text-machine">x {record.quantity}</p>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <p className="font-black text-machine">x {record.quantity}</p>
+                    {stage === "xray" && (
+                      <button
+                        type="button"
+                        onClick={() => removeRecord(record)}
+                        className="inline-flex h-9 w-9 items-center justify-center rounded border border-red-200 bg-white text-red-700"
+                        aria-label="删除X线不良记录"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <p className="mt-1 text-xs text-slate-500">{shortDate(record.created_at)}</p>
                 {(record.color || record.size) && (

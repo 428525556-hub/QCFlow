@@ -18,6 +18,10 @@ export async function insertInspectionRecord(record: InspectionRecordInsert) {
   return apiRequest<InspectionRecord>("/api/inspections", { method: "POST", body: JSON.stringify(record) });
 }
 
+export async function deleteInspectionRecord(recordId: string) {
+  return apiRequest<{ id: string }>(`/api/inspections?id=${encodeURIComponent(recordId)}`, { method: "DELETE" });
+}
+
 export async function getInspectionWorkspaceData(orderId: string, stage: InspectionStage) {
   const [orderResult, itemsResult, recordsResult, attachmentsResult] = await Promise.all([
     getOrderById(orderId),
