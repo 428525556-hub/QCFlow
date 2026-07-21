@@ -161,7 +161,7 @@ export default function ReportPage() {
     pdf.save(`検品検针報告書-${currentOrder.po_number}.pdf`);
   }
 
-  function downloadExcel() {
+  async function downloadExcel() {
     if (!order) return;
     const finalRows = report.finalRecordRows.filter((record) => record.finalQuantity > 0);
     const detailRows = finalRows.length > 0 ? finalRows : report.finalRecordRows;
@@ -172,11 +172,31 @@ export default function ReportPage() {
     const emptyCells = (count: number) => Array.from({ length: count }, () => "<td></td>").join("");
     const spanCell = (value: string | number | null | undefined, colspan: number, className = "") => `<td colspan="${colspan}" class="${className}">${excelEscape(value)}</td>`;
     const spanHeader = (value: string | number | null | undefined, colspan: number, className = "") => `<th colspan="${colspan}" class="${className}">${excelEscape(value)}</th>`;
-    const spanLinkCell = (value: string, href: string, colspan: number, className = "") =>
-      `<td colspan="${colspan}" class="${className}"><a href="${excelEscape(href)}">${excelEscape(value)}</a></td>`;
     const defectTotal = (type: string) => detailRows.filter((record) => record.defect_type === type).reduce((sum, record) => sum + record.finalQuantity, 0);
     const defectDetailRows = report.finalRecordRows.filter((record) => Number(record.quantity || 0) > 0 || Boolean(record.photo_url));
     const defectPhotoRows = defectDetailRows.filter((record) => Boolean(record.photo_url));
+    const photoSources = new Map<string, string>();
+
+    await Promise.all(
+      defectPhotoRows.map(async (record) => {
+        if (!record.photo_url) return;
+
+        try {
+          const response = await fetch(record.photo_url, { cache: "force-cache" });
+          if (!response.ok) throw new Error("Photo download failed");
+          const blob = await response.blob();
+          const dataUrl = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(String(reader.result));
+            reader.onerror = () => reject(reader.error);
+            reader.readAsDataURL(blob);
+          });
+          photoSources.set(record.id, dataUrl);
+        } catch {
+          photoSources.set(record.id, record.photo_url);
+        }
+      })
+    );
 
     const html = `<!doctype html>
 <html>
@@ -207,7 +227,9 @@ export default function ReportPage() {
     .total { background: #eef6ff; font-weight: 700; }
     .bad { color: #c00000; font-weight: 700; }
     .good { color: #008000; font-weight: 700; }
-    .link a { color: #0563c1; text-decoration: underline; font-weight: 700; }
+    .photo-row td { height: 92px; }
+    .photo-cell { padding: 4px; }
+    .photo-cell img { display: block; width: 112px; height: 84px; margin: 0 auto; object-fit: contain; }
     .note { text-align: left; }
     .no-border { border: none; }
   </style>
@@ -389,8 +411,9 @@ export default function ReportPage() {
         ? `<tr>${spanCell("写真なし / 暂无图片", columnCount, "note")}</tr>`
         : defectPhotoRows
             .map((record) => {
-              const imageCell = record.photo_url ? spanLinkCell("查看图片 / 写真", record.photo_url, 11, "link") : spanCell("-", 11);
-              return `<tr>${spanCell(shortDate(record.created_at), 4)}${spanCell(stageText(record.inspection_stage), 4)}${spanCell(order.po_number, 5)}${spanCell(order.sku, 5)}${spanCell(record.color || "-", 5)}${spanCell(record.size || "-", 4)}${spanCell(record.defect_type, 8)}${spanCell(record.quantity, 3, "bad")}${spanCell(record.remark || "-", 10)}${imageCell}${emptyCells(columnCount - 59)}</tr>`;
+              const photoSource = photoSources.get(record.id) ?? record.photo_url ?? "";
+              const imageCell = `<td colspan="11" class="photo-cell"><img src="${excelEscape(photoSource)}" alt="${excelEscape(record.defect_type)}" /></td>`;
+              return `<tr class="photo-row">${spanCell(shortDate(record.created_at), 4)}${spanCell(stageText(record.inspection_stage), 4)}${spanCell(order.po_number, 5)}${spanCell(order.sku, 5)}${spanCell(record.color || "-", 5)}${spanCell(record.size || "-", 4)}${spanCell(record.defect_type, 8)}${spanCell(record.quantity, 3, "bad")}${spanCell(record.remark || "-", 10)}${imageCell}${emptyCells(columnCount - 59)}</tr>`;
             })
             .join("")
     }
