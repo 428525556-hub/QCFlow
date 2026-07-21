@@ -203,6 +203,7 @@ drop policy if exists "users can delete own shipment items" on public.shipment_i
 drop policy if exists "users can read own records" on public.inspection_records;
 drop policy if exists "users can insert own records" on public.inspection_records;
 drop policy if exists "users can update own records" on public.inspection_records;
+drop policy if exists "users can delete own records" on public.inspection_records;
 drop policy if exists "admin can read invites and visitors can validate active invites" on public.registration_invites;
 drop policy if exists "admin can insert invites" on public.registration_invites;
 drop policy if exists "admin can update invites and visitors can consume invites" on public.registration_invites;
@@ -337,6 +338,10 @@ create policy "users can update own records"
 on public.inspection_records for update
 using (auth.uid() = user_id)
 with check (auth.uid() = user_id);
+
+create policy "users can delete own records"
+on public.inspection_records for delete
+using (auth.uid() = user_id);
 
 create policy "admin can read invites and visitors can validate active invites"
 on public.registration_invites for select
@@ -481,6 +486,15 @@ using (
     join public.user_profiles p on p.id = auth.uid()
     where o.id = inspection_records.order_id and p.role = 'client' and p.customer_name = o.customer_name
   )
+);
+
+drop policy if exists "users can delete own records" on public.inspection_records;
+create policy "users can delete own records"
+on public.inspection_records for delete
+using (
+  auth.uid() = user_id
+  or (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
+  or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role in ('admin', 'staff'))
 );
 
 drop policy if exists "users can read own order attachments" on public.order_attachments;
