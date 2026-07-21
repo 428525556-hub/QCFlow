@@ -149,8 +149,9 @@ export default function ReportPage() {
     const detailRows = finalRows.length > 0 ? finalRows : report.finalRecordRows;
     const stageText = (stage: string) => (stage === "xray" ? "X線" : "検品");
     const allDefects = report.grouped.flatMap((group) => group.items.map((item) => ({ group: group.group, type: item.type, quantity: item.quantity })));
+    const reportDefects = allDefects.filter((item) => item.quantity > 0);
     const leftColumns = ["NO", "品番", "注文NO", "カラー", "サイズ", "検品数", "区分", "備考"];
-    const columnCount = Math.max(16, leftColumns.length + allDefects.length);
+    const columnCount = Math.max(11, leftColumns.length + reportDefects.length);
     const defectTotal = (type: string) => detailRows.filter((record) => record.defect_type === type).reduce((sum, record) => sum + record.finalQuantity, 0);
     const defectDetailRows = report.finalRecordRows.filter((record) => Number(record.quantity || 0) > 0 || Boolean(record.photo_url));
     const defectPhotoRows = defectDetailRows.filter((record) => Boolean(record.photo_url));
@@ -162,7 +163,7 @@ export default function ReportPage() {
     const headerFill = { type: "pattern" as const, pattern: "solid" as const, fgColor: { argb: "FFF4F9FF" } };
     const totalFill = { type: "pattern" as const, pattern: "solid" as const, fgColor: { argb: "FFEEF6FF" } };
 
-    worksheet.columns = Array.from({ length: columnCount }, (_, index) => ({ width: index < leftColumns.length ? 11 : 7 }));
+    worksheet.columns = Array.from({ length: columnCount }, (_, index) => ({ width: index < 11 ? 14 : 7 }));
     worksheet.views = [{ showGridLines: false }];
 
     function styleRange(rowNumber: number, fromColumn: number, toColumn: number, options: { fill?: typeof sectionFill; bold?: boolean; fontColor?: string; horizontal?: "left" | "center" | "right" } = {}) {
@@ -193,6 +194,25 @@ export default function ReportPage() {
       return row.number;
     }
 
+    function infoRow(pairs: Array<[string, string | number | null | undefined]>) {
+      const rowNumber = worksheet.rowCount + 1;
+      const spans: Array<[number, number]> = [
+        [1, 2],
+        [3, 4],
+        [5, 6],
+        [7, 8],
+        [9, 9],
+        [10, 11]
+      ];
+      pairs.slice(0, 3).forEach(([label, value], index) => {
+        const labelSpan = spans[index * 2];
+        const valueSpan = spans[index * 2 + 1];
+        merge(rowNumber, labelSpan[0], labelSpan[1], label, { bold: true, horizontal: "left" });
+        merge(rowNumber, valueSpan[0], valueSpan[1], value, { horizontal: "left" });
+      });
+      worksheet.getRow(rowNumber).height = 22;
+    }
+
     function sectionTitle(title: string) {
       const rowNumber = worksheet.rowCount + 1;
       merge(rowNumber, 1, columnCount, title, { fill: sectionFill, bold: true });
@@ -209,22 +229,38 @@ export default function ReportPage() {
     merge(1, 1, columnCount, "検品検針報告書 / 检品检针报告书", { fill: titleFill, bold: true });
     worksheet.getRow(1).height = 26;
 
-    writeRow(["検品報告書NO", order.po_number, "得意先 / 客户名称", order.customer_name, "工場名 / 工厂名称", order.factory_name, "検品日", new Date().toLocaleDateString()], undefined, { bold: true });
-    writeRow(["ブランド名", "QCFlow", "注文NO / 订单号", order.po_number, "品番 / 番号", order.sku, "入荷日 / 来货日", order.inbound_date ?? "-"], undefined, { bold: true });
-    writeRow(["検品数量", report.total, "出荷日 / 出货日", order.shipping_date ?? "-", "不良数", report.defectQty, "不良率", report.rate], undefined, { bold: true });
+    infoRow([
+      ["検品報告書NO", order.po_number],
+      ["得意先 / 客户名称", order.customer_name],
+      ["工場名 / 工厂名称", order.factory_name]
+    ]);
+    infoRow([
+      ["ブランド名", "QCFlow"],
+      ["注文NO / 订单号", order.po_number],
+      ["品番 / 番号", order.sku]
+    ]);
+    infoRow([
+      ["検品日", new Date().toLocaleDateString()],
+      ["入荷日 / 来货日", order.inbound_date ?? "-"],
+      ["出荷日 / 出货日", order.shipping_date ?? "-"]
+    ]);
+    infoRow([
+      ["検品数量", report.total],
+      ["不良数", report.defectQty],
+      ["不良率", report.rate]
+    ]);
 
-    const defectStartColumn = leftColumns.length + 1;
-    writeRow([...leftColumns, ...allDefects.map((item) => item.type)], undefined, { fill: headerFill, bold: true });
+    writeRow([...leftColumns, ...reportDefects.map((item) => item.type)], undefined, { fill: headerFill, bold: true });
     if (detailRows.length === 0) {
       merge(worksheet.rowCount + 1, 1, columnCount, "不良記録なし / 暂无不良记录", { horizontal: "left" });
     } else {
       detailRows.forEach((record, index) => {
-        const defectValues = allDefects.map((item) => (item.type === record.defect_type ? record.finalQuantity || "" : ""));
+        const defectValues = reportDefects.map((item) => (item.type === record.defect_type ? record.finalQuantity || "" : ""));
         writeRow([index + 1, order.sku, order.po_number, record.color || "-", record.size || "-", record.quantity, stageText(record.inspection_stage), record.remark || "", ...defectValues]);
       });
     }
     const totalRowValues = Array.from({ length: leftColumns.length }, (_, index) => (index === 0 ? "合計 / 汇总" : ""));
-    writeRow([...totalRowValues, ...allDefects.map((item) => defectTotal(item.type) || "")], undefined, { fill: totalFill, bold: true });
+    writeRow([...totalRowValues, ...reportDefects.map((item) => defectTotal(item.type) || "")], undefined, { fill: totalFill, bold: true });
     writeRow(["最終不良 / 最终不良", report.defectQty, "二次検品良品戻し / 二检转良", report.recoveredQty, "二次確認不良 / 二次确认仍不良", report.confirmedFailedQty], undefined, { bold: true });
 
     sectionTitle("カラー・サイズ別不良 / 颜色尺码不良");
