@@ -176,6 +176,7 @@ export default function ReportPage() {
       `<td colspan="${colspan}" class="${className}"><a href="${excelEscape(href)}">${excelEscape(value)}</a></td>`;
     const defectTotal = (type: string) => detailRows.filter((record) => record.defect_type === type).reduce((sum, record) => sum + record.finalQuantity, 0);
     const defectDetailRows = report.finalRecordRows.filter((record) => Number(record.quantity || 0) > 0 || Boolean(record.photo_url));
+    const defectPhotoRows = defectDetailRows.filter((record) => Boolean(record.photo_url));
 
     const html = `<!doctype html>
 <html>
@@ -355,17 +356,41 @@ export default function ReportPage() {
       ${spanHeader("一次不良", 3)}
       ${spanHeader("二検良品 / 二检转良", 3)}
       ${spanHeader("最終不良 / 最终不良", 3)}
-      ${spanHeader("備考 / 备注", 8)}
-      ${spanHeader("写真 / 图片", 7)}
-      ${emptyCells(columnCount - 59)}
+      ${spanHeader("備考 / 备注", 15)}
+      ${emptyCells(columnCount - 52)}
     </tr>
     ${
       defectDetailRows.length === 0
         ? `<tr>${spanCell("不良記録なし / 暂无不良记录", columnCount, "note")}</tr>`
         : defectDetailRows
             .map((record) => {
-              const imageCell = record.photo_url ? spanLinkCell("查看图片 / 写真", record.photo_url, 7, "link") : spanCell("-", 7);
-              return `<tr>${spanCell(shortDate(record.created_at), 4)}${spanCell(stageText(record.inspection_stage), 4)}${spanCell(order.po_number, 5)}${spanCell(order.sku, 5)}${spanCell(record.color || "-", 5)}${spanCell(record.size || "-", 4)}${spanCell(record.defect_type, 8)}${spanCell(record.quantity, 3, "bad")}${spanCell(record.recoveredQuantity, 3, "good")}${spanCell(record.finalQuantity, 3, record.finalQuantity > 0 ? "bad" : "good")}${spanCell(record.remark || "-", 8)}${imageCell}${emptyCells(columnCount - 59)}</tr>`;
+              return `<tr>${spanCell(shortDate(record.created_at), 4)}${spanCell(stageText(record.inspection_stage), 4)}${spanCell(order.po_number, 5)}${spanCell(order.sku, 5)}${spanCell(record.color || "-", 5)}${spanCell(record.size || "-", 4)}${spanCell(record.defect_type, 8)}${spanCell(record.quantity, 3, "bad")}${spanCell(record.recoveredQuantity, 3, "good")}${spanCell(record.finalQuantity, 3, record.finalQuantity > 0 ? "bad" : "good")}${spanCell(record.remark || "-", 15)}${emptyCells(columnCount - 52)}</tr>`;
+            })
+            .join("")
+    }
+    <tr>
+      ${spanCell("不良品写真 / 不良品图片", columnCount, "subgroup")}
+    </tr>
+    <tr>
+      ${spanHeader("日付 / 日期", 4)}
+      ${spanHeader("工程 / 环节", 4)}
+      ${spanHeader("注文NO / 订单号", 5)}
+      ${spanHeader("品番 / 番号", 5)}
+      ${spanHeader("カラー / 颜色", 5)}
+      ${spanHeader("サイズ / 尺码", 4)}
+      ${spanHeader("不良内容 / 问题", 8)}
+      ${spanHeader("数量", 3)}
+      ${spanHeader("備考 / 备注", 10)}
+      ${spanHeader("写真 / 图片", 11)}
+      ${emptyCells(columnCount - 59)}
+    </tr>
+    ${
+      defectPhotoRows.length === 0
+        ? `<tr>${spanCell("写真なし / 暂无图片", columnCount, "note")}</tr>`
+        : defectPhotoRows
+            .map((record) => {
+              const imageCell = record.photo_url ? spanLinkCell("查看图片 / 写真", record.photo_url, 11, "link") : spanCell("-", 11);
+              return `<tr>${spanCell(shortDate(record.created_at), 4)}${spanCell(stageText(record.inspection_stage), 4)}${spanCell(order.po_number, 5)}${spanCell(order.sku, 5)}${spanCell(record.color || "-", 5)}${spanCell(record.size || "-", 4)}${spanCell(record.defect_type, 8)}${spanCell(record.quantity, 3, "bad")}${spanCell(record.remark || "-", 10)}${imageCell}${emptyCells(columnCount - 59)}</tr>`;
             })
             .join("")
     }
