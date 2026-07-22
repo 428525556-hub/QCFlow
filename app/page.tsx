@@ -6,7 +6,7 @@ import { percent, todayRange } from "@/lib/format";
 import { getDashboardData } from "@/src/api/ordersApi";
 import { buildDashboardMetrics, type DashboardMetrics } from "@/src/services/orderService";
 import type { InspectionRecord, Order } from "@/lib/types";
-import { Activity, ArrowRight, CalendarDays, CheckCircle2, ClipboardList, PackageCheck, PackageOpen, PackagePlus, PackageSearch, PlayCircle, ScanLine, Truck } from "lucide-react";
+import { Activity, CalendarDays, CheckCircle2, ClipboardList, PackageCheck, PackageOpen, PackagePlus, PackageSearch, PlayCircle, ScanLine, Truck } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
@@ -105,15 +105,12 @@ export default function DashboardPage() {
       <section>
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-lg font-black">最近入库订单</h2>
-          <Link href="/orders" className="text-sm font-bold text-machine">
-            去检品
-          </Link>
         </div>
         <div className="space-y-3">
           {loading && <div className="panel p-5 text-sm text-slate-500">正在加载订单...</div>}
           {!loading && orders.length === 0 && <div className="panel p-5 text-sm text-slate-500">暂无入库订单，请先点击“入库”。</div>}
           {orders.slice(0, 8).map((order) => (
-            <Link key={order.id} href={`/inspect/${order.id}`} className="panel flex items-center justify-between gap-3 p-4">
+            <div key={order.id} className="panel p-4">
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
                   <p className="truncate font-black">{order.po_number}</p>
@@ -123,8 +120,7 @@ export default function DashboardPage() {
                   {order.customer_name} · 番号 {order.sku} · 入库 {order.quantity} 件
                 </p>
               </div>
-              <ArrowRight size={18} className="shrink-0 text-slate-400" />
-            </Link>
+            </div>
           ))}
         </div>
       </section>
