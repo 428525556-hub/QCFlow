@@ -3,7 +3,7 @@
 import { StatusBadge } from "@/components/StatusBadge";
 import { useCurrentProfile, useCurrentUser } from "@/components/AuthGuard";
 import type { InspectionPlan, Order, OrderItem, OrderStatus } from "@/lib/types";
-import { deleteOrder as deleteOrderById, deleteOrderItems, getOrdersWithItems, insertOrderItems, restoreOrder as restoreOrderById, softDeleteOrder, updateOrder, updateOrderItem } from "@/src/api/ordersApi";
+import { deleteOrder as deleteOrderById, deleteOrderItems, getOrdersWithItems, insertOrderItems, restoreOrder as restoreOrderById, softDeleteOrder, syncOrderItemIdentity, updateOrder, updateOrderItem } from "@/src/api/ordersApi";
 import { Archive, ChevronDown, ChevronRight, Plus, RotateCcw, Save, ShieldAlert, Trash2, Truck, Undo2 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
@@ -291,11 +291,34 @@ export default function ManageOrdersPage() {
           return;
         }
       } else {
+        const originalItem = order.items.find((orderItem) => orderItem.id === item.id);
         const { error } = await updateOrderItem(item.id, payload);
         if (error) {
           setMessage(`${error.message}。保存明细失败，请确认管理员权限 SQL 已执行。`);
           setSavingId(null);
           return;
+        }
+        if (originalItem) {
+          const { error: syncError } = await syncOrderItemIdentity(
+            order.id,
+            {
+              po_number: originalItem.po_number || "-",
+              sku: originalItem.sku || "-",
+              color: originalItem.color || "未定",
+              size: originalItem.size || "未定"
+            },
+            {
+              po_number: payload.po_number,
+              sku: payload.sku,
+              color: payload.color,
+              size: payload.size
+            }
+          );
+          if (syncError) {
+            setMessage(`${syncError.message}。明细已保存，但同步开箱/装箱/检品记录失败，请确认管理员权限 SQL 已执行。`);
+            setSavingId(null);
+            return;
+          }
         }
       }
     }

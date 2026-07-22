@@ -6,6 +6,7 @@ type OrderInsert = Database["public"]["Tables"]["orders"]["Insert"];
 type OrderUpdate = Database["public"]["Tables"]["orders"]["Update"];
 type OrderItemInsert = Database["public"]["Tables"]["order_items"]["Insert"];
 type OrderItemUpdate = Database["public"]["Tables"]["order_items"]["Update"];
+type OrderItemIdentity = Pick<OrderItem, "po_number" | "sku" | "color" | "size">;
 
 export async function getActiveOrders() {
   return apiRequest<Order[]>("/api/orders");
@@ -160,4 +161,44 @@ export async function updateOrderItem(itemId: string, payload: OrderItemUpdate) 
 
 export async function deleteOrderItems(itemIds: string[]) {
   return apiRequest<{ ids: string[] }>("/api/order-items", { method: "DELETE", body: JSON.stringify({ ids: itemIds }) });
+}
+
+export async function syncOrderItemIdentity(orderId: string, from: OrderItemIdentity, to: OrderItemIdentity) {
+  const identityChanged = from.po_number !== to.po_number || from.sku !== to.sku || from.color !== to.color || from.size !== to.size;
+  if (!identityChanged) return { error: null };
+
+  const fullMatchUpdates = [
+    supabase
+      .from("reservation_carton_items")
+      .update(to)
+      .eq("order_id", orderId)
+      .eq("po_number", from.po_number)
+      .eq("sku", from.sku)
+      .eq("color", from.color)
+      .eq("size", from.size),
+    supabase
+      .from("unboxing_records")
+      .update(to)
+      .eq("order_id", orderId)
+      .eq("po_number", from.po_number)
+      .eq("sku", from.sku)
+      .eq("color", from.color)
+      .eq("size", from.size),
+    supabase
+      .from("shipment_items")
+      .update(to)
+      .eq("order_id", orderId)
+      .eq("po_number", from.po_number)
+      .eq("sku", from.sku)
+      .eq("color", from.color)
+      .eq("size", from.size)
+  ];
+
+  const colorSizeUpdates = [
+    supabase.from("inspection_records").update({ color: to.color, size: to.size }).eq("order_id", orderId).eq("color", from.color).eq("size", from.size),
+    supabase.from("reinspection_records").update({ color: to.color, size: to.size }).eq("order_id", orderId).eq("color", from.color).eq("size", from.size)
+  ];
+
+  const results = await Promise.all([...fullMatchUpdates, ...colorSizeUpdates]);
+  return { error: results.find((result) => result.error)?.error ?? null };
 }
