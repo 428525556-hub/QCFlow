@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { findMissingCartonNos, sortByCartonNo } from "@/lib/cartonNumbers";
+import { compareCartonNo, findMissingCartonNos, sortByCartonNo } from "@/lib/cartonNumbers";
 import { updateOrder } from "@/src/api/ordersApi";
 import { deleteShipmentCarton, getShipmentOrderData, insertShipmentCarton, insertShipmentItems } from "@/src/api/shipmentApi";
 import { getCurrentUser } from "@/src/api/userApi";
@@ -57,6 +57,54 @@ function escapeHtml(value: string | number | null | undefined) {
 
 function safePdfText(value: string | number | null | undefined) {
   return String(value ?? "").replace(/[^\x20-\x7E]/g, "?");
+}
+
+function formatCartonRanges(values: string[]) {
+  const sorted = Array.from(new Set(values.map((value) => value.trim()).filter(Boolean))).sort(compareCartonNo);
+  const parsed = sorted.map((value) => {
+    const match = value.match(/^(.*?)(\d+)(\D*)$/);
+    return {
+      raw: value,
+      prefix: match?.[1] ?? value,
+      number: match ? Number(match[2]) : null,
+      width: match?.[2]?.length ?? 0,
+      suffix: match?.[3] ?? ""
+    };
+  });
+
+  const ranges: string[] = [];
+  let index = 0;
+  while (index < parsed.length) {
+    const start = parsed[index];
+    if (start.number === null) {
+      ranges.push(start.raw);
+      index += 1;
+      continue;
+    }
+
+    let endIndex = index;
+    while (
+      endIndex + 1 < parsed.length &&
+      parsed[endIndex + 1].number !== null &&
+      parsed[endIndex + 1].prefix === start.prefix &&
+      parsed[endIndex + 1].suffix === start.suffix &&
+      Number(parsed[endIndex + 1].number) === Number(parsed[endIndex].number) + 1
+    ) {
+      endIndex += 1;
+    }
+
+    const end = parsed[endIndex];
+    if (endIndex === index) {
+      ranges.push(start.raw);
+    } else {
+      const startNo = `${start.prefix}${String(start.number).padStart(start.width, "0")}${start.suffix}`;
+      const endNo = `${end.prefix}${String(end.number).padStart(end.width, "0")}${end.suffix}`;
+      ranges.push(`${startNo}-${endNo}`);
+    }
+    index = endIndex + 1;
+  }
+
+  return ranges.join("、");
 }
 
 export default function ShipOrderPage() {
@@ -608,10 +656,11 @@ export default function ShipOrderPage() {
       packingRows.set(key, row);
     }
 
-    const summaryRows = new Map<string, { poNumber: string; sku: string; color: string; size: string; quantity: number }>();
+    const summaryRows = new Map<string, { poNumber: string; sku: string; color: string; size: string; cartonNos: Set<string>; quantity: number }>();
     for (const item of allItems) {
       const key = [item.poNumber, item.sku, item.color, item.size].join("|||");
-      const row = summaryRows.get(key) ?? { poNumber: item.poNumber, sku: item.sku, color: item.color, size: item.size, quantity: 0 };
+      const row = summaryRows.get(key) ?? { poNumber: item.poNumber, sku: item.sku, color: item.color, size: item.size, cartonNos: new Set<string>(), quantity: 0 };
+      row.cartonNos.add(item.cartonNo);
       row.quantity += item.quantity;
       summaryRows.set(key, row);
     }
@@ -644,8 +693,20 @@ export default function ShipOrderPage() {
     const summaryDataRows =
       Array.from(summaryRows.values())
         .sort((a, b) => a.color.localeCompare(b.color, "zh-Hans-CN") || a.size.localeCompare(b.size, "zh-Hans-CN", { numeric: true }))
-        .map((row) => rowXml([cell(order.customer_name, 0, "Border"), cell(row.poNumber, 0, "Border"), cell(row.sku, 0, "Border"), cell(row.color, 0, "Border"), cell(row.size, 0, "Border"), cell(row.quantity, 0, "Border"), cell("", 0, "Border")]))
-        .join("") || rowXml([cell("暂无汇总", 6, "Border")]);
+        .map((row) =>
+          rowXml([
+            cell(order.customer_name, 0, "Border"),
+            cell(formatCartonRanges(Array.from(row.cartonNos)), 0, "Border"),
+            cell(row.cartonNos.size, 0, "Border"),
+            cell(row.poNumber, 0, "Border"),
+            cell(row.sku, 0, "Border"),
+            cell(row.color, 0, "Border"),
+            cell(row.size, 0, "Border"),
+            cell(row.quantity, 0, "Border"),
+            cell("", 0, "Border")
+          ])
+        )
+        .join("") || rowXml([cell("暂无汇总", 8, "Border")]);
 
     const workbookXml = `<?xml version="1.0" encoding="UTF-8"?>
 <?mso-application progid="Excel.Sheet"?>
@@ -662,13 +723,13 @@ export default function ShipOrderPage() {
   </Styles>
   <Worksheet ss:Name="装箱统计">
     <Table>
-      ${rowXml([cell("装箱统计", 6, "Title")])}
+      ${rowXml([cell("装箱统计", 8, "Title")])}
       ${rowXml([cell("客户名称", 0, "Meta"), cell(order.customer_name, 2), cell("工厂名称", 0, "Meta"), cell(order.factory_name, 2)])}
       ${rowXml([cell("订单号", 0, "Meta"), cell(order.po_number, 2), cell("番号", 0, "Meta"), cell(order.sku, 2)])}
       ${rowXml([cell("出货日期", 0, "Meta"), cell(order.shipping_date ?? "", 2), cell("装箱箱数", 0, "Meta"), cell(orderedCartons.length), cell("装箱双数", 0, "Meta"), cell(totals.shipped)])}
-      ${rowXml([cell("客户", 0, "Header"), cell("订单号", 0, "Header"), cell("番号", 0, "Header"), cell("颜色", 0, "Header"), cell("尺码", 0, "Header"), cell("装箱双数", 0, "Header"), cell("备注", 0, "Header")])}
+      ${rowXml([cell("客户", 0, "Header"), cell("箱号范围", 0, "Header"), cell("箱数", 0, "Header"), cell("订单号", 0, "Header"), cell("番号", 0, "Header"), cell("颜色", 0, "Header"), cell("尺码", 0, "Header"), cell("装箱双数", 0, "Header"), cell("备注", 0, "Header")])}
       ${summaryDataRows}
-      ${rowXml([cell("合计", 4, "Header"), cell(totals.shipped, 0, "Header"), cell("", 0, "Header")])}
+      ${rowXml([cell("合计", 6, "Header"), cell(totals.shipped, 0, "Header"), cell("", 0, "Header")])}
     </Table>
   </Worksheet>
   <Worksheet ss:Name="packing list">
