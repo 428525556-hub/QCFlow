@@ -129,6 +129,24 @@ export default function ShipOrderPage() {
     });
   }, [items, shippedBySku]);
 
+  const resolveUnboxingSize = useCallback((record: UnboxingRecord) => {
+    if (record.size) return record.size;
+    const matched =
+      items.find((item) => item.po_number === record.po_number && item.sku === record.sku && item.color === record.color && Number(item.quantity_per_carton || 0) === Number(record.quantity || 0)) ??
+      items.find((item) => item.po_number === record.po_number && item.sku === record.sku && item.color === record.color) ??
+      items.find((item) => item.color === record.color);
+    return matched?.size ?? "";
+  }, [items]);
+
+  const normalizedUnboxingRecords = useMemo(
+    () =>
+      unboxingRecords.map((record) => ({
+        ...record,
+        size: resolveUnboxingSize(record)
+      })),
+    [resolveUnboxingSize, unboxingRecords]
+  );
+
   const packedQuantityByCartonNo = useMemo(() => {
     const map = new Map<string, number>();
     for (const carton of cartons) {
@@ -151,7 +169,7 @@ export default function ShipOrderPage() {
       }
     >();
 
-    for (const record of unboxingRecords) {
+    for (const record of normalizedUnboxingRecords) {
       const nextCartonNo = record.carton_no.trim();
       if (!nextCartonNo) continue;
       const current =
@@ -180,7 +198,7 @@ export default function ShipOrderPage() {
         if (a.packed !== b.packed) return a.packed ? 1 : -1;
         return a.cartonNo.localeCompare(b.cartonNo, "zh-Hans-CN", { numeric: true });
       });
-  }, [packedQuantityByCartonNo, unboxingRecords]);
+  }, [normalizedUnboxingRecords, packedQuantityByCartonNo]);
 
   const unboxedStats = useMemo(() => {
     const opened = unboxedCartonGroups.length;
@@ -216,7 +234,7 @@ export default function ShipOrderPage() {
       }
     >();
 
-    for (const record of unboxingRecords) {
+    for (const record of normalizedUnboxingRecords) {
       const cartonKey = record.carton_no.trim();
       if (!cartonKey) continue;
 
@@ -261,7 +279,7 @@ export default function ShipOrderPage() {
         pendingQuantity: row.pendingQuantity
       }))
       .sort((a, b) => a.color.localeCompare(b.color, "zh-Hans-CN") || a.size.localeCompare(b.size, "zh-Hans-CN", { numeric: true }));
-  }, [packedQuantityByCartonNo, unboxingRecords]);
+  }, [normalizedUnboxingRecords, packedQuantityByCartonNo]);
 
   const selectedUnboxedGroup = useMemo(() => unboxedCartonGroups.find((group) => group.cartonNo === cartonNo.trim()) ?? null, [cartonNo, unboxedCartonGroups]);
   const existingCartonForEditor = useMemo(() => cartons.find((carton) => carton.carton_no.trim() === cartonNo.trim()) ?? null, [cartonNo, cartons]);
@@ -307,7 +325,7 @@ export default function ShipOrderPage() {
   }
 
   function applyUnboxedCarton(nextCartonNo: string) {
-    const matchedRecords = unboxingRecords.filter((record) => record.carton_no.trim() === nextCartonNo);
+    const matchedRecords = normalizedUnboxingRecords.filter((record) => record.carton_no.trim() === nextCartonNo);
     setCartonNo(nextCartonNo);
     if (matchedRecords.length === 0) return;
 
@@ -372,12 +390,6 @@ export default function ShipOrderPage() {
       if (!ok) return false;
     }
 
-    const nextMissingCartonNos = findMissingCartonNos([...cartons.map((carton) => carton.carton_no), cleanCartonNo]);
-    if (nextMissingCartonNos.length > 0) {
-      const ok = window.confirm(`当前箱号中间缺少：${nextMissingCartonNos.join("、")}。确认继续保存吗？`);
-      if (!ok) return false;
-    }
-
     const draftBySku = new Map<string, number>();
     for (const row of cleanRows) {
       const key = itemKey(row.color, row.size);
@@ -390,7 +402,7 @@ export default function ShipOrderPage() {
         setMessage("颜色或尺码不在这个订单里，请重新选择。");
         return false;
       }
-      if (qty > summary.remaining) {
+      if (!existsInUnboxing && qty > summary.remaining) {
         setMessage(`${summary.color} / ${summary.size} 本次装箱 ${qty}，超过剩余 ${summary.remaining}。`);
         return false;
       }
@@ -884,6 +896,11 @@ export default function ShipOrderPage() {
               {selectedUnboxedGroup && selectedUnboxedGroup.quantity < 10 && (
                 <p className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm font-bold text-red-700">当前箱号开箱数量少于 10 双，完成后会标记为短装。</p>
               )}
+              {message && (
+                <p className={`rounded px-3 py-2 text-sm font-bold ${messageType === "success" ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}`}>
+                  {message}
+                </p>
+              )}
 
               <div className="grid gap-3 md:grid-cols-2">
                 <label className="space-y-1">
@@ -899,6 +916,7 @@ export default function ShipOrderPage() {
               <div className="space-y-3">
                 {rows.map((row) => {
                   const sizeOptions = sizesForColor(row.color);
+                  const visibleSizeOptions = Array.from(new Set([row.size, ...sizeOptions].filter(Boolean)));
                   const summary = itemSummary.find((item) => item.color === row.color && item.size === row.size);
                   return (
                     <div key={row.id} className="rounded border border-line bg-blue-50 p-3">
@@ -916,7 +934,8 @@ export default function ShipOrderPage() {
                         <label className="space-y-1">
                           <span className="label">尺码</span>
                           <select className="field" value={row.size} onChange={(event) => updateRow(row.id, { size: event.target.value })} disabled={Boolean(existingCartonForEditor)}>
-                            {sizeOptions.map((size) => (
+                            {visibleSizeOptions.length === 0 && <option value="">未填写</option>}
+                            {visibleSizeOptions.map((size) => (
                               <option key={size} value={size}>
                                 {size}
                               </option>
@@ -953,7 +972,7 @@ export default function ShipOrderPage() {
                           </button>
                         ))}
                       </div>
-                      <p className="mt-2 text-xs font-bold text-blue-700">这个颜色尺码剩余可装：{summary?.remaining ?? 0}</p>
+                      <p className="mt-2 text-xs font-bold text-blue-700">{selectedUnboxedGroup ? "按开箱记录装箱" : `这个颜色尺码剩余可装：${summary?.remaining ?? 0}`}</p>
                     </div>
                   );
                 })}
