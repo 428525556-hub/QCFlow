@@ -72,7 +72,9 @@ export default function ShipOrderPage() {
   const [editorOpen, setEditorOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [finishing, setFinishing] = useState(false);
   const [message, setMessage] = useState("");
+  const [messageType, setMessageType] = useState<"error" | "success">("error");
   const pendingScrollCartonNoRef = useRef<string | null>(null);
   const unboxedCartonRefs = useRef(new Map<string, HTMLButtonElement>());
 
@@ -346,6 +348,7 @@ export default function ShipOrderPage() {
   async function saveCarton(closeAfterSave = false) {
     if (!order) return false;
     setMessage("");
+    setMessageType("error");
 
     const cleanCartonNo = cartonNo.trim();
     const cleanRows = rows.filter((row) => row.color && row.size && Number(row.quantity) > 0);
@@ -451,6 +454,8 @@ export default function ShipOrderPage() {
     const ok = window.confirm("确定删除这个箱号和里面的装箱明细吗？");
     if (!ok) return;
 
+    setMessage("");
+    setMessageType("error");
     const { error } = await deleteShipmentCarton(cartonId);
     if (error) {
       setMessage(`${error.message}。请确认 Supabase 已执行最新 schema.sql。`);
@@ -461,12 +466,41 @@ export default function ShipOrderPage() {
 
   async function finishShipment() {
     if (!order) return;
-    const { error } = await updateOrder(order.id, { status: "已完成" });
-    if (error) {
-      setMessage(error.message);
+    if (finishing) return;
+
+    setMessage("");
+    setMessageType("error");
+
+    if (cartons.length === 0) {
+      setMessage("还没有装箱箱号，不能完成装箱。");
       return;
     }
-    setOrder({ ...order, status: "已完成" });
+
+    if (missingCartonNos.length > 0) {
+      const ok = window.confirm(`当前箱号中间缺少：${missingCartonNos.join("、")}。确认仍然完成装箱吗？`);
+      if (!ok) return;
+    }
+
+    if (unboxedStats.pending > 0) {
+      const ok = window.confirm(`还有 ${unboxedStats.pending} 个开箱箱号未装箱。确认仍然完成装箱吗？`);
+      if (!ok) return;
+    }
+
+    setFinishing(true);
+    try {
+      const { error } = await updateOrder(order.id, { status: "已完成" });
+      if (error) {
+        setMessage(error.message || "完成装箱失败，请重新点击一次。");
+        return;
+      }
+      setOrder({ ...order, status: "已完成" });
+      setMessageType("success");
+      setMessage("装箱已完成，订单状态已更新。");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "完成装箱失败，请重新点击一次。");
+    } finally {
+      setFinishing(false);
+    }
   }
 
   function exportShipmentDetail() {
@@ -816,7 +850,11 @@ export default function ShipOrderPage() {
         </div>
       </div>
 
-      {message && <p className="rounded bg-red-50 px-3 py-2 text-sm font-bold text-red-700">{message}</p>}
+      {message && (
+        <p className={`rounded px-3 py-2 text-sm font-bold ${messageType === "success" ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}`}>
+          {message}
+        </p>
+      )}
 
       {editorOpen && (
         <div className="fixed inset-0 z-50 flex items-end bg-slate-950/45 p-0 md:items-center md:justify-center md:p-6">
@@ -1151,11 +1189,17 @@ export default function ShipOrderPage() {
       <section className="space-y-3">
         <div className="flex items-center justify-between gap-3">
           <h2 className="text-lg font-black text-blue-950">箱号明细</h2>
-          <button type="button" onClick={finishShipment} className="secondary-btn">
+          <button type="button" onClick={finishShipment} disabled={finishing} className="secondary-btn disabled:opacity-50">
             <CheckCircle2 size={18} />
-            完成装箱
+            {finishing ? "完成中" : "完成装箱"}
           </button>
         </div>
+
+        {message && (
+          <p className={`rounded px-3 py-2 text-sm font-bold ${messageType === "success" ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}`}>
+            {message}
+          </p>
+        )}
 
         {missingCartonNos.length > 0 && (
           <div className="flex gap-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-bold text-amber-800">
