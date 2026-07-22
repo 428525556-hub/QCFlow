@@ -4,7 +4,7 @@ import { useCurrentUser } from "@/components/AuthGuard";
 import { StatusBadge } from "@/components/StatusBadge";
 import { percent, todayRange } from "@/lib/format";
 import { getDashboardData } from "@/src/api/ordersApi";
-import { buildDashboardMetrics, findActiveOrder, type DashboardMetrics } from "@/src/services/orderService";
+import { buildDashboardMetrics, type DashboardMetrics } from "@/src/services/orderService";
 import type { InspectionRecord, Order } from "@/lib/types";
 import { Activity, ArrowRight, CalendarDays, CheckCircle2, ClipboardList, PackageCheck, PackageOpen, PackagePlus, PackageSearch, PlayCircle, ScanLine, Truck } from "lucide-react";
 import Link from "next/link";
@@ -34,7 +34,6 @@ export default function DashboardPage() {
     return buildDashboardMetrics(orders, records, todayRange());
   }, [orders, records]);
 
-  const activeOrder = findActiveOrder(orders);
   const cards = [
     { label: "今日入库订单", value: metrics.todayOrders, icon: ClipboardList },
     { label: "今日完成检品", value: metrics.todayDone, icon: CheckCircle2 },
@@ -64,11 +63,11 @@ export default function DashboardPage() {
               <PackageOpen size={18} />
               开箱
             </Link>
-            <Link href={activeOrder ? `/inspect/${activeOrder.id}` : "/orders"} className="secondary-btn border-slate-700 bg-slate-900 text-white">
+            <Link href="/orders" className="secondary-btn border-slate-700 bg-slate-900 text-white">
               <PlayCircle size={18} />
               检品
             </Link>
-            <Link href={activeOrder ? `/xray/${activeOrder.id}` : "/orders"} className="secondary-btn border-slate-700 bg-slate-900 text-white">
+            <Link href="/orders" className="secondary-btn border-slate-700 bg-slate-900 text-white">
               <ScanLine size={18} />
               X线
             </Link>
