@@ -101,20 +101,57 @@ export default function ShipOrderPage() {
     load();
   }, [load]);
 
+  const resolveItemIdentity = useCallback(
+    (source: { po_number: string; sku: string; color: string; size: string; quantity?: number }) => {
+      const byPoSkuSize = items.find((item) => item.po_number === source.po_number && item.sku === source.sku && item.size === source.size);
+      if (byPoSkuSize) return { color: byPoSkuSize.color, size: byPoSkuSize.size };
+
+      const byPoSkuColorQuantity = items.find(
+        (item) =>
+          item.po_number === source.po_number &&
+          item.sku === source.sku &&
+          item.color === source.color &&
+          Number(item.quantity_per_carton || 0) === Number(source.quantity || 0)
+      );
+      if (byPoSkuColorQuantity) return { color: byPoSkuColorQuantity.color, size: byPoSkuColorQuantity.size };
+
+      const byPoSkuColor = items.find((item) => item.po_number === source.po_number && item.sku === source.sku && item.color === source.color);
+      if (byPoSkuColor) return { color: byPoSkuColor.color, size: byPoSkuColor.size };
+
+      const byColorSize = items.find((item) => item.color === source.color && item.size === source.size);
+      if (byColorSize) return { color: byColorSize.color, size: byColorSize.size };
+
+      return { color: source.color, size: source.size };
+    },
+    [items]
+  );
+
+  const normalizedCartons = useMemo<CartonWithItems[]>(
+    () =>
+      cartons.map((carton) => ({
+        ...carton,
+        items: carton.items.map((item) => {
+          const identity = resolveItemIdentity({ po_number: item.po_number, sku: item.sku, color: item.color, size: item.size, quantity: item.quantity });
+          return { ...item, color: identity.color, size: identity.size };
+        })
+      })),
+    [cartons, resolveItemIdentity]
+  );
+
   const colors = useMemo(() => Array.from(new Set(items.map((item) => item.color))).filter(Boolean), [items]);
-  const sortedCartons = useMemo(() => sortByCartonNo(cartons), [cartons]);
-  const missingCartonNos = useMemo(() => findMissingCartonNos(cartons.map((carton) => carton.carton_no)), [cartons]);
+  const sortedCartons = useMemo(() => sortByCartonNo(normalizedCartons), [normalizedCartons]);
+  const missingCartonNos = useMemo(() => findMissingCartonNos(normalizedCartons.map((carton) => carton.carton_no)), [normalizedCartons]);
 
   const shippedBySku = useMemo(() => {
     const map = new Map<string, number>();
-    for (const carton of cartons) {
+    for (const carton of normalizedCartons) {
       for (const item of carton.items) {
         const key = itemKey(item.color, item.size);
         map.set(key, (map.get(key) ?? 0) + item.quantity);
       }
     }
     return map;
-  }, [cartons]);
+  }, [normalizedCartons]);
 
   const itemSummary = useMemo(() => {
     return items.map((item) => {
@@ -129,32 +166,27 @@ export default function ShipOrderPage() {
     });
   }, [items, shippedBySku]);
 
-  const resolveUnboxingSize = useCallback((record: UnboxingRecord) => {
-    if (record.size) return record.size;
-    const matched =
-      items.find((item) => item.po_number === record.po_number && item.sku === record.sku && item.color === record.color && Number(item.quantity_per_carton || 0) === Number(record.quantity || 0)) ??
-      items.find((item) => item.po_number === record.po_number && item.sku === record.sku && item.color === record.color) ??
-      items.find((item) => item.color === record.color);
-    return matched?.size ?? "";
-  }, [items]);
-
   const normalizedUnboxingRecords = useMemo(
     () =>
-      unboxingRecords.map((record) => ({
-        ...record,
-        size: resolveUnboxingSize(record)
-      })),
-    [resolveUnboxingSize, unboxingRecords]
+      unboxingRecords.map((record) => {
+        const identity = resolveItemIdentity({ po_number: record.po_number, sku: record.sku, color: record.color, size: record.size, quantity: record.quantity });
+        return {
+          ...record,
+          color: identity.color,
+          size: identity.size
+        };
+      }),
+    [resolveItemIdentity, unboxingRecords]
   );
 
   const packedQuantityByCartonNo = useMemo(() => {
     const map = new Map<string, number>();
-    for (const carton of cartons) {
+    for (const carton of normalizedCartons) {
       const cartonQuantity = carton.items.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
       map.set(carton.carton_no.trim(), (map.get(carton.carton_no.trim()) ?? 0) + cartonQuantity);
     }
     return map;
-  }, [cartons]);
+  }, [normalizedCartons]);
 
   const unboxedCartonGroups = useMemo(() => {
     const map = new Map<
@@ -282,15 +314,15 @@ export default function ShipOrderPage() {
   }, [normalizedUnboxingRecords, packedQuantityByCartonNo]);
 
   const selectedUnboxedGroup = useMemo(() => unboxedCartonGroups.find((group) => group.cartonNo === cartonNo.trim()) ?? null, [cartonNo, unboxedCartonGroups]);
-  const existingCartonForEditor = useMemo(() => cartons.find((carton) => carton.carton_no.trim() === cartonNo.trim()) ?? null, [cartonNo, cartons]);
+  const existingCartonForEditor = useMemo(() => normalizedCartons.find((carton) => carton.carton_no.trim() === cartonNo.trim()) ?? null, [cartonNo, normalizedCartons]);
 
   const totals = useMemo(() => {
     const planned = items.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
     const inbound = items.reduce((sum, item) => sum + Number(item.inbound_quantity || 0), 0);
-    const shipped = cartons.reduce((sum, carton) => sum + carton.items.reduce((itemSum, item) => itemSum + item.quantity, 0), 0);
+    const shipped = normalizedCartons.reduce((sum, carton) => sum + carton.items.reduce((itemSum, item) => itemSum + item.quantity, 0), 0);
     const base = inbound > 0 ? inbound : planned;
     return { planned, inbound, shipped, remaining: Math.max(0, base - shipped) };
-  }, [items, cartons]);
+  }, [items, normalizedCartons]);
 
   function sizesForColor(color: string) {
     return itemSummary
@@ -1226,7 +1258,7 @@ export default function ShipOrderPage() {
             <span>当前订单箱号中间缺少：{missingCartonNos.join("、")}</span>
           </div>
         )}
-        {cartons.length === 0 && <div className="panel p-4 text-sm text-slate-500">还没有装箱箱号。</div>}
+        {normalizedCartons.length === 0 && <div className="panel p-4 text-sm text-slate-500">还没有装箱箱号。</div>}
         {sortedCartons.map((carton) => {
           const cartonQuantity = carton.items.reduce((sum, item) => sum + item.quantity, 0);
           const sourceGroup = unboxedCartonGroups.find((group) => group.cartonNo === carton.carton_no.trim());
