@@ -5,7 +5,7 @@ import { updateOrder } from "@/src/api/ordersApi";
 import { deleteShipmentCarton, getShipmentOrderData, insertShipmentCarton, insertShipmentItems } from "@/src/api/shipmentApi";
 import { getCurrentUser } from "@/src/api/userApi";
 import type { Order, OrderItem, ShipmentCarton, ShipmentItem, UnboxingRecord } from "@/lib/types";
-import { AlertTriangle, ArrowLeft, CheckCircle2, Download, Package, Plus, Save, Trash2, X } from "lucide-react";
+import { AlertTriangle, ArrowLeft, CheckCircle2, Download, Package, Plus, RotateCcw, Save, Trash2, X } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -506,6 +506,23 @@ export default function ShipOrderPage() {
       return;
     }
     setCartons((current) => current.filter((carton) => carton.id !== cartonId));
+  }
+
+  async function restoreCartonToPacking(carton: CartonWithItems) {
+    const cleanCartonNo = carton.carton_no.trim();
+    const ok = window.confirm(`确定把箱号 ${cleanCartonNo} 恢复为未装箱，并重新打开装箱窗口吗？`);
+    if (!ok) return;
+
+    setMessage("");
+    setMessageType("error");
+    const { error } = await deleteShipmentCarton(carton.id);
+    if (error) {
+      setMessage(`${error.message}。恢复失败，请确认 Supabase 已执行最新 schema.sql。`);
+      return;
+    }
+
+    setCartons((current) => current.filter((item) => item.id !== carton.id));
+    window.setTimeout(() => applyUnboxedCarton(cleanCartonNo), 0);
   }
 
   async function finishShipment() {
@@ -1277,9 +1294,19 @@ export default function ShipOrderPage() {
                   {cartonQuantity} 双{carton.remark ? `/ ${carton.remark}` : ""}
                 </p>
               </div>
-              <button type="button" onClick={() => deleteCarton(carton.id)} className="inline-flex h-10 w-10 items-center justify-center rounded border border-red-200 bg-white text-red-700">
-                <Trash2 size={18} />
-              </button>
+              <div className="flex shrink-0 gap-2">
+                <button
+                  type="button"
+                  onClick={() => restoreCartonToPacking(carton)}
+                  className="inline-flex h-10 w-10 items-center justify-center rounded border border-blue-200 bg-white text-blue-700"
+                  aria-label="恢复到装箱"
+                >
+                  <RotateCcw size={18} />
+                </button>
+                <button type="button" onClick={() => deleteCarton(carton.id)} className="inline-flex h-10 w-10 items-center justify-center rounded border border-red-200 bg-white text-red-700">
+                  <Trash2 size={18} />
+                </button>
+              </div>
             </div>
             <div className="mt-3 grid grid-cols-2 gap-2 md:grid-cols-4">
               {carton.items.map((item) => (
