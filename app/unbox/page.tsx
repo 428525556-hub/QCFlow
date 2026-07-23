@@ -7,8 +7,8 @@ import { getActiveOrders, getOrderItems } from "@/src/api/ordersApi";
 import { getRecentUnboxingRecords, getReservationCartonPlan, getUnboxingPhotoPublicUrl, getUnboxingRecords, insertUnboxingRecord, insertUnboxingRecords, uploadUnboxingPhoto } from "@/src/api/shipmentApi";
 import { compressImageFile, createSafeId, formatMb } from "@/src/utils";
 import type { Order, OrderItem, ReservationCarton, ReservationCartonItem, UnboxingRecord } from "@/lib/types";
-import { AlertTriangle, Camera, CheckSquare, PackageOpen, Save } from "lucide-react";
-import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
+import { AlertTriangle, Camera, CheckSquare, PackageOpen, Save, X } from "lucide-react";
+import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 
 export default function UnboxPage() {
   const user = useCurrentUser();
@@ -31,6 +31,9 @@ export default function UnboxPage() {
   const [saving, setSaving] = useState(false);
   const [bulkSaving, setBulkSaving] = useState(false);
   const [message, setMessage] = useState("");
+  const [editorOpen, setEditorOpen] = useState(false);
+  const cartonButtonRefs = useRef(new Map<string, HTMLButtonElement>());
+  const pendingScrollCartonNoRef = useRef<string | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -154,6 +157,7 @@ export default function UnboxPage() {
   function choosePlannedCarton(carton: ReservationCarton) {
     const planItems = plannedCartonItems.filter((item) => item.reservation_carton_id === carton.id);
     const firstItem = planItems[0] ?? null;
+    setMessage("");
     setCartonNo(carton.carton_no);
     if (firstItem) {
       setPoNumber(firstItem.po_number);
@@ -164,6 +168,12 @@ export default function UnboxPage() {
     }
     setShortageQuantity(0);
     setRemark("");
+    setEditorOpen(true);
+  }
+
+  function openManualEditor() {
+    setMessage("");
+    setEditorOpen(true);
   }
 
   async function pickPhoto(event: ChangeEvent<HTMLInputElement>) {
@@ -179,8 +189,7 @@ export default function UnboxPage() {
     setMessage(`照片已压缩：${formatMb(file.size)} -> ${formatMb(compressed.size)}`);
   }
 
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function saveUnboxingRecord(closeEditor = false) {
     if (!user || !selectedOrder) return;
     setMessage("");
 
@@ -255,14 +264,17 @@ export default function UnboxPage() {
         insertedRecords.push(data as UnboxingRecord);
       }
 
+      const savedCartonNo = cartonNo.trim();
+      pendingScrollCartonNoRef.current = savedCartonNo;
       setRecords((current) => [...insertedRecords, ...current]);
-      setCartonNo("");
+      setCartonNo(savedCartonNo);
       setQuantity(10);
       setShortageQuantity(0);
       setRemark("");
       setPhoto(null);
       if (preview) URL.revokeObjectURL(preview);
       setPreview("");
+      if (closeEditor) setEditorOpen(false);
       setMessage("开箱记录已保存。");
     } catch (error) {
       const detail = error instanceof Error ? error.message : "未知错误";
@@ -271,6 +283,19 @@ export default function UnboxPage() {
       setSaving(false);
     }
   }
+
+  useEffect(() => {
+    const targetCartonNo = pendingScrollCartonNoRef.current;
+    if (!targetCartonNo) return;
+
+    const target = cartonButtonRefs.current.get(targetCartonNo);
+    if (!target) return;
+
+    pendingScrollCartonNoRef.current = null;
+    window.requestAnimationFrame(() => {
+      target.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+  }, [selectedOrderRecords, plannedCartons]);
 
   async function openAllPlannedCartons() {
     if (!user || !selectedOrder || unopenedPlannedCartons.length === 0 || bulkSaving) return;
@@ -333,7 +358,7 @@ export default function UnboxPage() {
         <p className="mt-1 text-sm text-blue-700">记录箱号、订单号、番号、颜色、尺码、数量；少鞋时上传照片留证。</p>
       </div>
 
-      <form onSubmit={submit} className="panel space-y-4 p-4">
+      <section className="panel space-y-4 p-4">
         <label className="space-y-1">
           <span className="label">订单</span>
           <select className="field" value={orderId} onChange={(event) => setOrderId(event.target.value)} required>
@@ -373,6 +398,13 @@ export default function UnboxPage() {
                 return (
                   <button
                     key={carton.id}
+                    ref={(element) => {
+                      if (element) {
+                        cartonButtonRefs.current.set(carton.carton_no, element);
+                      } else {
+                        cartonButtonRefs.current.delete(carton.carton_no);
+                      }
+                    }}
                     type="button"
                     onClick={() => choosePlannedCarton(carton)}
                     className={`min-h-10 rounded border px-2 text-xs font-black ${
@@ -390,6 +422,28 @@ export default function UnboxPage() {
             </div>
           </section>
         )}
+
+        <div className="flex justify-end">
+          <button type="button" onClick={openManualEditor} className="inline-flex min-h-10 items-center gap-2 rounded border border-blue-300 bg-white px-4 text-sm font-black text-blue-800">
+            <PackageOpen size={16} />
+            手动开箱
+          </button>
+        </div>
+
+        {message && !editorOpen && <p className="rounded bg-blue-50 px-3 py-2 text-sm font-bold text-blue-800">{message}</p>}
+
+        {editorOpen && (
+          <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/45 p-0 md:items-center md:p-6">
+            <div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-t-2xl bg-white p-4 shadow-xl md:rounded-2xl">
+              <div className="mb-4 flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-lg font-black text-blue-950">确认开箱</p>
+                  <p className="text-sm font-bold text-blue-700">确认箱号、颜色、尺码和数量后保存。</p>
+                </div>
+                <button type="button" onClick={() => setEditorOpen(false)} className="grid h-10 w-10 shrink-0 place-items-center rounded border border-blue-200 bg-white text-slate-600">
+                  <X size={18} />
+                </button>
+              </div>
 
         {selectedPlannedItems.length > 0 && (
           <section className="rounded border border-blue-200 bg-white p-3">
@@ -504,11 +558,19 @@ export default function UnboxPage() {
 
         {message && <p className="rounded bg-blue-50 px-3 py-2 text-sm font-bold text-blue-800">{message}</p>}
 
-        <button type="submit" disabled={saving || !selectedOrder} className="primary-btn w-full">
+        <div className="grid grid-cols-2 gap-3">
+          <button type="button" onClick={() => setEditorOpen(false)} className="secondary-btn w-full">
+            取消
+          </button>
+          <button type="button" onClick={() => saveUnboxingRecord(true)} disabled={saving || !selectedOrder} className="primary-btn w-full">
           <Save size={18} />
           {saving ? "保存中" : "保存开箱记录"}
-        </button>
-      </form>
+          </button>
+        </div>
+            </div>
+          </div>
+        )}
+      </section>
 
       <section className="space-y-3">
         <h2 className="text-lg font-black text-blue-950">最近开箱记录</h2>
