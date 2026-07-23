@@ -1186,7 +1186,7 @@ export default function ShipOrderPage() {
             这个订单还没有开箱记录，可以先手动输入箱号。
           </p>
         ) : (
-          <div className="mt-3 grid gap-2 md:grid-cols-2">
+          <div className="mt-3 grid grid-cols-5 gap-2">
             {unboxedCartonGroups.map((group) => {
               const shortPacked = isShortPacked(group);
               return (
@@ -1201,7 +1201,8 @@ export default function ShipOrderPage() {
                   }}
                   type="button"
                   onClick={() => applyUnboxedCarton(group.cartonNo)}
-                  className={`rounded border p-3 text-left transition ${
+                  title={`箱号 ${group.cartonNo} / 开箱 ${group.quantity} 双 / 装箱 ${group.packedQuantity} 双${group.shortage > 0 ? ` / 少 ${group.shortage} 双` : ""}`}
+                  className={`min-h-10 rounded border px-2 text-center text-xs font-black transition ${
                     shortPacked
                       ? "border-red-300 bg-red-50 text-red-900"
                       : group.packed
@@ -1209,19 +1210,7 @@ export default function ShipOrderPage() {
                         : "border-blue-200 bg-white text-blue-950 hover:border-blue-400"
                   }`}
                 >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-base font-black">箱号 {group.cartonNo}</span>
-                    <span
-                      className={`rounded px-2 py-1 text-xs font-black ${
-                        shortPacked ? "bg-red-100 text-red-700" : group.packed ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"
-                      }`}
-                    >
-                      {shortPacked ? "短装" : group.packed ? "已装" : "未装"}
-                    </span>
-                  </div>
-                  <p className="mt-1 text-xs font-bold text-slate-600">
-                    开箱 {group.quantity} 双 / 装箱 {group.packedQuantity} 双{group.shortage > 0 ? ` / 少 ${group.shortage} 双` : ""}
-                  </p>
+                  {group.cartonNo}
                 </button>
               );
             })}
