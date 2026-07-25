@@ -672,6 +672,12 @@ export default function ShipOrderPage() {
       endCartonNo: string;
       cartonCount: number;
     };
+    type QuantitySummaryRow = {
+      poNumber: string;
+      sku: string;
+      color: string;
+      sizes: Map<string, number>;
+    };
 
     const buildCartonRows = (sku: string) => {
       const rows: CartonPackingRow[] = [];
@@ -723,6 +729,37 @@ export default function ShipOrderPage() {
       }
       return rangeRows;
     };
+    const addSummaryQuantity = (map: Map<string, QuantitySummaryRow>, source: { poNumber: string; sku: string; color: string; size: string; quantity: number }) => {
+      const key = [source.poNumber, source.sku, source.color].join("|||");
+      const row = map.get(key) ?? { poNumber: source.poNumber, sku: source.sku, color: source.color, sizes: new Map<string, number>() };
+      row.sizes.set(source.size, (row.sizes.get(source.size) ?? 0) + Number(source.quantity || 0));
+      map.set(key, row);
+    };
+    const sortedSummaryRows = (map: Map<string, QuantitySummaryRow>) =>
+      Array.from(map.values()).sort(
+        (a, b) => a.poNumber.localeCompare(b.poNumber, "zh-Hans-CN", { numeric: true }) || a.color.localeCompare(b.color, "zh-Hans-CN") || a.sku.localeCompare(b.sku, "zh-Hans-CN", { numeric: true })
+      );
+    const renderQuantityBlock = (rows: QuantitySummaryRow[], sizeColumns: string[], label: string, styleId: string) => {
+      const blockTotal = rows.reduce((sum, row) => sum + sizeColumns.reduce((sizeSum, size) => sizeSum + (row.sizes.get(size) ?? 0), 0), 0);
+      const renderedRows =
+        rows.length > 0
+          ? rows
+              .map((row) => {
+                const rowTotal = sizeColumns.reduce((sum, size) => sum + (row.sizes.get(size) ?? 0), 0);
+                return rowXml([
+                  cell(row.poNumber, 0, styleId),
+                  cell(row.sku, 0, styleId),
+                  cell(row.color, 0, styleId),
+                  ...sizeColumns.map((size) => cell(row.sizes.get(size) || 0, 0, styleId)),
+                  cell(rowTotal, 0, styleId),
+                  cell(label, 0, styleId)
+                ]);
+              })
+              .join("")
+          : rowXml([cell("", 0, styleId), cell("", 0, styleId), cell("", 0, styleId), ...sizeColumns.map(() => cell(0, 0, styleId)), cell(0, 0, styleId), cell(label, 0, styleId)]);
+
+      return `${rowXml([cell("", 2 + sizeColumns.length, "Plain"), cell("合计", 1, "TotalHeader")])}${renderedRows}${rowXml([cell("", 3 + sizeColumns.length, "Plain"), cell(blockTotal, 0, "TotalHeader"), cell("", 0, "Plain")])}`;
+    };
 
     const skuSummaries = skuOrder.map((sku) => {
       const skuItems = allItems.filter((item) => (item.sku || order.sku || "packing list") === sku);
@@ -766,7 +803,8 @@ export default function ShipOrderPage() {
         .map((sku, index) => {
           const cartonRows = buildCartonRows(sku);
           const rangeRows = buildRangeRows(cartonRows);
-          const sizes = Array.from(new Set(cartonRows.flatMap((row) => Array.from(row.sizes.keys())).filter(Boolean))).sort(sizeSort);
+          const orderRows = items.filter((item) => (item.sku || order.sku || "packing list") === sku);
+          const sizes = Array.from(new Set([...cartonRows.flatMap((row) => Array.from(row.sizes.keys())), ...orderRows.map((item) => item.size)].filter(Boolean))).sort(sizeSort);
           const sizeColumns = sizes.length > 0 ? sizes : ["SIZE"];
           const sheetColumnCount = 7 + sizeColumns.length + 3;
           const sheetName = normalizeSheetName(sku, `packing-${index + 1}`);
@@ -791,6 +829,46 @@ export default function ShipOrderPage() {
               })
               .join("") || rowXml([cell("暂无装箱明细", sheetColumnCount - 1, "Border")]);
           const sizeHeader = sizeColumns.map((size) => cell(size, 0, "Header"));
+          const shippedSummaryMap = new Map<string, QuantitySummaryRow>();
+          const orderSummaryMap = new Map<string, QuantitySummaryRow>();
+          const shortageSummaryMap = new Map<string, QuantitySummaryRow>();
+          for (const item of allItems.filter((item) => (item.sku || order.sku || "packing list") === sku)) {
+            addSummaryQuantity(shippedSummaryMap, item);
+          }
+          for (const item of orderRows) {
+            addSummaryQuantity(orderSummaryMap, { poNumber: item.po_number, sku: item.sku, color: item.color, size: item.size, quantity: item.quantity });
+          }
+          const summaryKeys = new Set([...Array.from(orderSummaryMap.keys()), ...Array.from(shippedSummaryMap.keys())]);
+          for (const key of summaryKeys) {
+            const ordered = orderSummaryMap.get(key);
+            const shipped = shippedSummaryMap.get(key);
+            const [poNumber = "", nextSku = "", color = ""] = key.split("|||");
+            for (const size of sizeColumns) {
+              const shortage = Math.max(0, (ordered?.sizes.get(size) ?? 0) - (shipped?.sizes.get(size) ?? 0));
+              if (shortage > 0 || ordered || shipped) {
+                addSummaryQuantity(shortageSummaryMap, { poNumber: ordered?.poNumber ?? shipped?.poNumber ?? poNumber, sku: ordered?.sku ?? shipped?.sku ?? nextSku, color: ordered?.color ?? shipped?.color ?? color, size, quantity: shortage });
+              }
+            }
+          }
+          const shippedSummaryRows = sortedSummaryRows(shippedSummaryMap);
+          const orderSummaryRows = sortedSummaryRows(orderSummaryMap);
+          const shortageSummaryRows = sortedSummaryRows(shortageSummaryMap);
+          const statsBlocksXml = [
+            renderQuantityBlock(shippedSummaryRows, sizeColumns, "出货双数", "BlueStat"),
+            rowXml(blank(sheetColumnCount)),
+            renderQuantityBlock(orderSummaryRows, sizeColumns, "订单双数", "BorderBold"),
+            rowXml(blank(sheetColumnCount)),
+            renderQuantityBlock(shortageSummaryRows, sizeColumns, "短装双数", "RedStat")
+          ].join("");
+          const footerRowsXml = [
+            rowXml(blank(sheetColumnCount)),
+            rowXml([cell("总箱数:", 0, "FooterLabel"), cell(rangeRows.reduce((sum, row) => sum + row.cartonCount, 0), 0, "Border"), ...blank(sheetColumnCount - 2)]),
+            rowXml([cell("总双数:", 0, "FooterLabel"), cell(sheetTotal, 0, "Border"), ...blank(sheetColumnCount - 2)]),
+            rowXml([cell("制作人:", 0, "FooterLabel"), cell("", 0, "Border"), ...blank(sheetColumnCount - 2)]),
+            rowXml([cell("责任人:", 0, "FooterLabel"), cell("", 0, "Border"), ...blank(sheetColumnCount - 2)]),
+            rowXml([cell("制作日:", 0, "FooterLabel"), cell(new Date().toISOString().slice(0, 10), 0, "DateBorder"), ...blank(sheetColumnCount - 2)]),
+            rowXml([cell("备注:", 0, "FooterLabelGreen"), cell("", 1, "GreenFill"), ...blank(sheetColumnCount - 3)])
+          ].join("");
 
           return `<Worksheet ss:Name="${xmlAttr(sheetName)}">
     <Table>
@@ -803,6 +881,9 @@ export default function ShipOrderPage() {
       ${rowXml([cell("箱号", 2, "Header"), cell("箱", 0, "Header"), cell("订单号", 0, "Header"), cell("品番", 0, "Header"), cell("颜色", 0, "Header"), ...sizeHeader, cell("每箱/双数", 0, "Header"), cell("总双数", 0, "Header"), cell("备注", 0, "Header")])}
       ${packingDataRows}
       ${rowXml([cell("合计", 2, "Header"), cell(rangeRows.reduce((sum, row) => sum + row.cartonCount, 0), 0, "Header"), ...blank(3 + sizeColumns.length), cell("", 0, "Header"), cell(sheetTotal, 0, "Header"), cell("", 0, "Header")])}
+      ${rowXml(blank(sheetColumnCount))}
+      ${statsBlocksXml}
+      ${footerRowsXml}
     </Table>
   </Worksheet>`;
         })
@@ -819,6 +900,14 @@ export default function ShipOrderPage() {
     <Style ss:ID="SubTitle"><Font ss:Bold="1" ss:Size="12"/><Alignment ss:Horizontal="Center"/></Style>
     <Style ss:ID="Header"><Font ss:Bold="1"/><Alignment ss:Horizontal="Center" ss:Vertical="Center"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/></Borders><Interior ss:Color="#D9EAF7" ss:Pattern="Solid"/></Style>
     <Style ss:ID="Border"><Alignment ss:Horizontal="Center" ss:Vertical="Center"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/></Borders></Style>
+    <Style ss:ID="BorderBold"><Font ss:Bold="1"/><Alignment ss:Horizontal="Center" ss:Vertical="Center"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/></Borders></Style>
+    <Style ss:ID="BlueStat"><Font ss:Bold="1" ss:Color="#0000FF"/><Alignment ss:Horizontal="Center" ss:Vertical="Center"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/></Borders></Style>
+    <Style ss:ID="RedStat"><Font ss:Bold="1" ss:Color="#FF0000"/><Alignment ss:Horizontal="Center" ss:Vertical="Center"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/></Borders></Style>
+    <Style ss:ID="TotalHeader"><Font ss:Bold="1"/><Alignment ss:Horizontal="Center" ss:Vertical="Center"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/></Borders><Interior ss:Color="#BFBFBF" ss:Pattern="Solid"/></Style>
+    <Style ss:ID="Plain"><Alignment ss:Horizontal="Center" ss:Vertical="Center"/></Style>
+    <Style ss:ID="FooterLabel"><Font ss:Bold="1"/><Alignment ss:Horizontal="Left" ss:Vertical="Center"/></Style>
+    <Style ss:ID="FooterLabelGreen"><Font ss:Bold="1" ss:Color="#008000"/><Alignment ss:Horizontal="Left" ss:Vertical="Center"/></Style>
+    <Style ss:ID="GreenFill"><Interior ss:Color="#99FF99" ss:Pattern="Solid"/></Style>
     <Style ss:ID="DateBorder"><Alignment ss:Horizontal="Center" ss:Vertical="Center"/><NumberFormat ss:Format="yyyy-mm-dd"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/></Borders></Style>
     <Style ss:ID="Meta"><Font ss:Bold="1"/><Alignment ss:Horizontal="Left"/></Style>
   </Styles>
