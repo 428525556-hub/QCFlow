@@ -627,86 +627,186 @@ export default function ShipOrderPage() {
         quantity: item.quantity
       }))
     );
-    const sizes = Array.from(new Set(allItems.map((item) => item.size).filter(Boolean))).sort((a, b) => a.localeCompare(b, "zh-Hans-CN", { numeric: true }));
-
-    const packingRows = new Map<
-      string,
-      {
-        cartonNo: string;
-        remark: string;
-        poNumber: string;
-        sku: string;
-        color: string;
-        sizes: Map<string, number>;
-      }
-    >();
-    for (const item of allItems) {
-      const key = [item.cartonNo, item.poNumber, item.sku, item.color].join("|||");
-      const row =
-        packingRows.get(key) ??
-        ({
-          cartonNo: item.cartonNo,
-          remark: item.remark,
-          poNumber: item.poNumber,
-          sku: item.sku,
-          color: item.color,
-          sizes: new Map<string, number>()
-        } as const);
-      row.sizes.set(item.size, (row.sizes.get(item.size) ?? 0) + item.quantity);
-      packingRows.set(key, row);
-    }
-
-    const summaryRows = new Map<string, { poNumber: string; sku: string; color: string; size: string; cartonNos: Set<string>; quantity: number }>();
-    for (const item of allItems) {
-      const key = [item.poNumber, item.sku, item.color, item.size].join("|||");
-      const row = summaryRows.get(key) ?? { poNumber: item.poNumber, sku: item.sku, color: item.color, size: item.size, cartonNos: new Set<string>(), quantity: 0 };
-      row.cartonNos.add(item.cartonNo);
-      row.quantity += item.quantity;
-      summaryRows.set(key, row);
-    }
 
     const cell = (value: string | number | null | undefined, mergeAcross = 0, styleId?: string) =>
       `<Cell${styleId ? ` ss:StyleID="${styleId}"` : ""}${mergeAcross > 0 ? ` ss:MergeAcross="${mergeAcross}"` : ""}><Data ss:Type="${typeof value === "number" ? "Number" : "String"}">${escapeHtml(value ?? "")}</Data></Cell>`;
     const rowXml = (cells: string[]) => `<Row>${cells.join("")}</Row>`;
     const blank = (count: number) => Array.from({ length: count }, () => cell(""));
+    const columnXml = (width: number) => `<Column ss:AutoFitWidth="0" ss:Width="${width}"/>`;
+    const xmlAttr = (value: string | number | null | undefined) => escapeHtml(value ?? "");
+    const normalizeSheetName = (name: string, fallback: string) =>
+      (name || fallback)
+        .replace(/[\\/?*:[\]]/g, "-")
+        .slice(0, 31);
+    const parseCartonNo = (value: string) => {
+      const match = value.trim().match(/^(.*?)(\d+)(\D*)$/);
+      if (!match) return null;
+      return { prefix: match[1], number: Number(match[2]), width: match[2].length, suffix: match[3] };
+    };
+    const nextCartonNo = (value: string) => {
+      const parsed = parseCartonNo(value);
+      if (!parsed) return null;
+      return `${parsed.prefix}${String(parsed.number + 1).padStart(parsed.width, "0")}${parsed.suffix}`;
+    };
+    const cartonCountForRange = (start: string, end: string) => {
+      const startParsed = parseCartonNo(start);
+      const endParsed = parseCartonNo(end);
+      if (startParsed && endParsed && startParsed.prefix === endParsed.prefix && startParsed.suffix === endParsed.suffix) {
+        return Math.max(1, endParsed.number - startParsed.number + 1);
+      }
+      return start === end ? 1 : formatCartonRanges([start, end]).split("、").length;
+    };
+    const sizeSort = (a: string, b: string) => a.localeCompare(b, "zh-Hans-CN", { numeric: true });
+    const skuOrder = Array.from(new Set(allItems.map((item) => item.sku || order.sku || "packing list").filter(Boolean)));
 
-    const sizeHeader = sizes.length > 0 ? sizes.map((size) => cell(size, 0, "Header")) : [cell("SIZE", 0, "Header")];
-    const packingDataRows =
-      Array.from(packingRows.values())
-        .map((row) => {
-          const rowTotal = sizes.reduce((sum, size) => sum + (row.sizes.get(size) ?? 0), 0);
-          return rowXml([
-            cell(row.cartonNo, 0, "Border"),
-            cell(1, 0, "Border"),
-            cell(row.poNumber, 0, "Border"),
-            cell(row.sku, 0, "Border"),
-            cell(row.color, 0, "Border"),
-            ...sizes.map((size) => cell(row.sizes.get(size) || "", 0, "Border")),
-            cell(rowTotal, 0, "Border"),
-            cell(rowTotal, 0, "Border"),
-            cell(row.remark, 0, "Border")
-          ]);
-        })
-        .join("") || rowXml([cell("暂无装箱明细", 8 + Math.max(sizes.length, 1), "Border")]);
+    type CartonPackingRow = {
+      cartonNo: string;
+      poNumber: string;
+      sku: string;
+      color: string;
+      remark: string;
+      sizes: Map<string, number>;
+    };
+    type RangePackingRow = CartonPackingRow & {
+      startCartonNo: string;
+      endCartonNo: string;
+      cartonCount: number;
+    };
 
-    const packingColumnCount = 8 + Math.max(sizes.length, 1);
+    const buildCartonRows = (sku: string) => {
+      const rows: CartonPackingRow[] = [];
+      for (const carton of orderedCartons) {
+        const cartonItems = carton.items.filter((item) => (item.sku || order.sku || "packing list") === sku);
+        const byIdentity = new Map<string, CartonPackingRow>();
+        for (const item of cartonItems) {
+          const key = [item.po_number, item.sku, item.color].join("|||");
+          const row =
+            byIdentity.get(key) ??
+            ({
+              cartonNo: carton.carton_no,
+              remark: carton.remark ?? "",
+              poNumber: item.po_number,
+              sku: item.sku,
+              color: item.color,
+              sizes: new Map<string, number>()
+            } as CartonPackingRow);
+          row.sizes.set(item.size, (row.sizes.get(item.size) ?? 0) + item.quantity);
+          byIdentity.set(key, row);
+        }
+        rows.push(...Array.from(byIdentity.values()));
+      }
+      return rows;
+    };
+
+    const signatureForRow = (row: CartonPackingRow) =>
+      [
+        row.poNumber,
+        row.sku,
+        row.color,
+        row.remark,
+        Array.from(row.sizes.entries())
+          .sort(([a], [b]) => sizeSort(a, b))
+          .map(([size, quantity]) => `${size}:${quantity}`)
+          .join("|")
+      ].join("|||");
+
+    const buildRangeRows = (cartonRows: CartonPackingRow[]) => {
+      const rangeRows: RangePackingRow[] = [];
+      for (const row of cartonRows) {
+        const previous = rangeRows[rangeRows.length - 1];
+        if (previous && signatureForRow(previous) === signatureForRow(row) && nextCartonNo(previous.endCartonNo) === row.cartonNo) {
+          previous.endCartonNo = row.cartonNo;
+          previous.cartonCount = cartonCountForRange(previous.startCartonNo, previous.endCartonNo);
+        } else {
+          rangeRows.push({ ...row, startCartonNo: row.cartonNo, endCartonNo: row.cartonNo, cartonCount: 1 });
+        }
+      }
+      return rangeRows;
+    };
+
+    const skuSummaries = skuOrder.map((sku) => {
+      const skuItems = allItems.filter((item) => (item.sku || order.sku || "packing list") === sku);
+      const cartonNos = new Set(skuItems.map((item) => item.cartonNo));
+      return {
+        sku,
+        poNumber: skuItems.find((item) => item.poNumber)?.poNumber ?? order.po_number,
+        inboundPerCarton: items.find((item) => item.sku === sku)?.quantity_per_carton ?? 10,
+        cartonCount: cartonNos.size,
+        quantity: skuItems.reduce((sum, item) => sum + item.quantity, 0),
+        pendingCartons: 0,
+        pendingQuantity: 0
+      };
+    });
+
     const summaryDataRows =
-      Array.from(summaryRows.values())
-        .sort((a, b) => a.color.localeCompare(b.color, "zh-Hans-CN") || a.size.localeCompare(b.size, "zh-Hans-CN", { numeric: true }))
+      skuSummaries
         .map((row) =>
           rowXml([
             cell(order.customer_name, 0, "Border"),
-            cell(formatCartonRanges(Array.from(row.cartonNos)), 0, "Border"),
-            cell(row.cartonNos.size, 0, "Border"),
-            cell(row.poNumber, 0, "Border"),
+            cell(order.factory_name, 0, "Border"),
+            cell(order.shipping_date ?? "", 0, "DateBorder"),
             cell(row.sku, 0, "Border"),
-            cell(row.color, 0, "Border"),
-            cell(row.size, 0, "Border"),
+            cell(row.poNumber, 0, "Border"),
+            cell(row.inboundPerCarton, 0, "Border"),
+            cell(row.cartonCount, 0, "Border"),
             cell(row.quantity, 0, "Border"),
+            cell(row.cartonCount, 0, "Border"),
+            cell(row.quantity, 0, "Border"),
+            cell(row.pendingCartons, 0, "Border"),
+            cell(row.pendingQuantity, 0, "Border"),
             cell("", 0, "Border")
           ])
         )
-        .join("") || rowXml([cell("暂无汇总", 8, "Border")]);
+        .join("") || rowXml([cell("暂无汇总", 12, "Border")]);
+    const totalCartonCount = skuSummaries.reduce((sum, row) => sum + row.cartonCount, 0);
+    const totalQuantity = skuSummaries.reduce((sum, row) => sum + row.quantity, 0);
+
+    const packingSheetsXml =
+      skuOrder
+        .map((sku, index) => {
+          const cartonRows = buildCartonRows(sku);
+          const rangeRows = buildRangeRows(cartonRows);
+          const sizes = Array.from(new Set(cartonRows.flatMap((row) => Array.from(row.sizes.keys())).filter(Boolean))).sort(sizeSort);
+          const sizeColumns = sizes.length > 0 ? sizes : ["SIZE"];
+          const sheetColumnCount = 7 + sizeColumns.length + 3;
+          const sheetName = normalizeSheetName(sku, `packing-${index + 1}`);
+          const sheetTotal = cartonRows.reduce((sum, row) => sum + Array.from(row.sizes.values()).reduce((rowSum, quantity) => rowSum + quantity, 0), 0);
+          const packingDataRows =
+            rangeRows
+              .map((row) => {
+                const perCarton = sizeColumns.reduce((sum, size) => sum + (row.sizes.get(size) ?? 0), 0);
+                return rowXml([
+                  cell(row.startCartonNo, 0, "Border"),
+                  cell("~", 0, "Border"),
+                  cell(row.endCartonNo, 0, "Border"),
+                  cell(row.cartonCount, 0, "Border"),
+                  cell(row.poNumber, 0, "Border"),
+                  cell(row.sku, 0, "Border"),
+                  cell(row.color, 0, "Border"),
+                  ...sizeColumns.map((size) => cell(row.sizes.get(size) || "", 0, "Border")),
+                  cell(perCarton, 0, "Border"),
+                  cell(perCarton * row.cartonCount, 0, "Border"),
+                  cell(row.remark, 0, "Border")
+                ]);
+              })
+              .join("") || rowXml([cell("暂无装箱明细", sheetColumnCount - 1, "Border")]);
+          const sizeHeader = sizeColumns.map((size) => cell(size, 0, "Header"));
+
+          return `<Worksheet ss:Name="${xmlAttr(sheetName)}">
+    <Table>
+      ${[45, 18, 45, 70, 105, 100, 90, ...sizeColumns.map(() => 48), 70, 78, 95].map(columnXml).join("")}
+      ${rowXml([cell("SHUOYU SHOES CO., LTD.", sheetColumnCount - 1, "Title")])}
+      ${rowXml([cell("packing      list", sheetColumnCount - 1, "SubTitle")])}
+      ${rowXml(blank(sheetColumnCount))}
+      ${rowXml([cell("FACTORY NAME(工厂名称)", 3, "Meta"), cell(order.factory_name, 2, "Border"), cell("ORDER.NO(订单NO)", 3, "Meta"), cell(order.po_number, 2, "Border"), cell("TOTAL", 0, "Header"), cell(sheetTotal, 0, "Header")])}
+      ${rowXml([cell("CTN No", 2, "Header"), cell("CTNS", 0, "Header"), cell("ORD No", 0, "Header"), cell("ART No", 0, "Header"), cell("COLOUR", 0, "Header"), cell("SIZE（尺码）", Math.max(sizeColumns.length - 1, 0), "Header"), cell("PRS", 0, "Header"), cell("PRS", 0, "Header"), cell("备注", 0, "Header")])}
+      ${rowXml([cell("箱号", 2, "Header"), cell("箱", 0, "Header"), cell("订单号", 0, "Header"), cell("品番", 0, "Header"), cell("颜色", 0, "Header"), ...sizeHeader, cell("每箱/双数", 0, "Header"), cell("总双数", 0, "Header"), cell("备注", 0, "Header")])}
+      ${packingDataRows}
+      ${rowXml([cell("合计", 2, "Header"), cell(rangeRows.reduce((sum, row) => sum + row.cartonCount, 0), 0, "Header"), ...blank(3 + sizeColumns.length), cell("", 0, "Header"), cell(sheetTotal, 0, "Header"), cell("", 0, "Header")])}
+    </Table>
+  </Worksheet>`;
+        })
+        .join("");
 
     const workbookXml = `<?xml version="1.0" encoding="UTF-8"?>
 <?mso-application progid="Excel.Sheet"?>
@@ -719,38 +819,27 @@ export default function ShipOrderPage() {
     <Style ss:ID="SubTitle"><Font ss:Bold="1" ss:Size="12"/><Alignment ss:Horizontal="Center"/></Style>
     <Style ss:ID="Header"><Font ss:Bold="1"/><Alignment ss:Horizontal="Center" ss:Vertical="Center"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/></Borders><Interior ss:Color="#D9EAF7" ss:Pattern="Solid"/></Style>
     <Style ss:ID="Border"><Alignment ss:Horizontal="Center" ss:Vertical="Center"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/></Borders></Style>
+    <Style ss:ID="DateBorder"><Alignment ss:Horizontal="Center" ss:Vertical="Center"/><NumberFormat ss:Format="yyyy-mm-dd"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/></Borders></Style>
     <Style ss:ID="Meta"><Font ss:Bold="1"/><Alignment ss:Horizontal="Left"/></Style>
   </Styles>
-  <Worksheet ss:Name="装箱统计">
+  <Worksheet ss:Name="出货统计">
     <Table>
-      ${rowXml([cell("装箱统计", 8, "Title")])}
-      ${rowXml([cell("客户名称", 0, "Meta"), cell(order.customer_name, 2), cell("工厂名称", 0, "Meta"), cell(order.factory_name, 2)])}
-      ${rowXml([cell("订单号", 0, "Meta"), cell(order.po_number, 2), cell("番号", 0, "Meta"), cell(order.sku, 2)])}
-      ${rowXml([cell("出货日期", 0, "Meta"), cell(order.shipping_date ?? "", 2), cell("装箱箱数", 0, "Meta"), cell(orderedCartons.length), cell("装箱双数", 0, "Meta"), cell(totals.shipped)])}
-      ${rowXml([cell("客户", 0, "Header"), cell("箱号范围", 0, "Header"), cell("箱数", 0, "Header"), cell("订单号", 0, "Header"), cell("番号", 0, "Header"), cell("颜色", 0, "Header"), cell("尺码", 0, "Header"), cell("装箱双数", 0, "Header"), cell("备注", 0, "Header")])}
+      ${[95, 70, 90, 115, 70, 55, 75, 75, 75, 75, 75, 75, 95].map(columnXml).join("")}
+      ${rowXml(blank(13))}
+      ${rowXml(blank(13))}
+      ${rowXml([cell("客户公司", 0, "Header"), cell("工厂", 0, "Header"), cell("出货日期", 0, "Header"), cell("品番", 0, "Header"), cell("订单号", 0, "Header"), cell("入数", 0, "Header"), cell("装箱箱数", 0, "Header"), cell("装箱双数", 0, "Header"), cell("出货箱数", 0, "Header"), cell("出货双数", 0, "Header"), cell("未装箱数", 0, "Header"), cell("未装双数", 0, "Header"), cell("备注", 0, "Header")])}
       ${summaryDataRows}
-      ${rowXml([cell("合计", 6, "Header"), cell(totals.shipped, 0, "Header"), cell("", 0, "Header")])}
+      ${rowXml([cell("合计", 5, "Header"), cell(totalCartonCount, 0, "Header"), cell(totalQuantity, 0, "Header"), cell(totalCartonCount, 0, "Header"), cell(totalQuantity, 0, "Header"), cell(0, 0, "Header"), cell(0, 0, "Header"), cell("", 0, "Header")])}
     </Table>
   </Worksheet>
-  <Worksheet ss:Name="packing list">
-    <Table>
-      ${rowXml([cell("SHUOYU SHOES CO., LTD.", packingColumnCount, "Title")])}
-      ${rowXml([cell("packing list", packingColumnCount, "SubTitle")])}
-      ${rowXml(blank(packingColumnCount + 1))}
-      ${rowXml([cell("FACTORY NAME(工厂名称)", 1, "Meta"), cell(order.factory_name, 2), cell("ORDER.NO(订单NO)", 1, "Meta"), cell(order.po_number, 2), cell("TOTAL", 0, "Header"), cell(totals.shipped, 0, "Header")])}
-      ${rowXml([cell("CTN No", 0, "Header"), cell("CTNS", 0, "Header"), cell("ORD No", 0, "Header"), cell("ART No", 0, "Header"), cell("COLOUR", 0, "Header"), cell("SIZE（尺码）", Math.max(sizes.length - 1, 0), "Header"), cell("PRS", 0, "Header"), cell("TOTAL PRS", 0, "Header"), cell("备注", 0, "Header")])}
-      ${rowXml([cell("箱号", 0, "Header"), cell("箱数", 0, "Header"), cell("订单号", 0, "Header"), cell("品番", 0, "Header"), cell("颜色", 0, "Header"), ...sizeHeader, cell("每箱/双数", 0, "Header"), cell("总双数", 0, "Header"), cell("备注", 0, "Header")])}
-      ${packingDataRows}
-      ${rowXml([cell("合计", 0, "Header"), cell(orderedCartons.length, 0, "Header"), ...blank(3 + Math.max(sizes.length, 1)), cell(totals.shipped, 0, "Header"), cell(totals.shipped, 0, "Header"), cell("", 0, "Header")])}
-    </Table>
-  </Worksheet>
+  ${packingSheetsXml}
 </Workbook>`;
 
     const blob = new Blob(["\ufeff", workbookXml], { type: "application/vnd.ms-excel;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `${order.po_number || "装箱明细"}.xls`;
+    link.download = `${order.customer_name || "客户"}-${skuOrder.join("_") || order.po_number || "装箱明细"}-出货统计.xls`;
     link.click();
     URL.revokeObjectURL(url);
   }
