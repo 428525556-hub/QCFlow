@@ -7,6 +7,9 @@ export type OrderProgress = {
   normalPassed: number;
   normalFailed: number;
   normalRecovered: number;
+  fieldPassed: number;
+  fieldFailed: number;
+  fieldRecovered: number;
   xrayPassed: number;
   xrayFailed: number;
   xrayRecovered: number;
@@ -17,6 +20,7 @@ export type OrderCustomerGroup = {
   totalQuantity: number;
   inboundQuantity: number;
   normalFailed: number;
+  fieldFailed: number;
   xrayFailed: number;
   orders: Order[];
 };
@@ -163,10 +167,13 @@ export function buildOrderProgressMap(orders: Order[], records: InspectionRecord
   for (const order of orders) {
     const baseQuantity = Number(order.inbound_quantity || order.quantity || 0);
     const normalOriginalFailed = sumDefectQuantity(records, order.id, "normal");
+    const fieldOriginalFailed = sumDefectQuantity(records, order.id, "field");
     const xrayOriginalFailed = sumDefectQuantity(records, order.id, "xray");
     const normalRecovered = sumRecoveredQuantity(reinspections, order.id, "normal");
+    const fieldRecovered = sumRecoveredQuantity(reinspections, order.id, "field");
     const xrayRecovered = sumRecoveredQuantity(reinspections, order.id, "xray");
     const normalFailed = Math.max(0, normalOriginalFailed - normalRecovered);
+    const fieldFailed = Math.max(0, fieldOriginalFailed - fieldRecovered);
     const xrayFailed = Math.max(0, xrayOriginalFailed - xrayRecovered);
 
     map.set(order.id, {
@@ -174,6 +181,9 @@ export function buildOrderProgressMap(orders: Order[], records: InspectionRecord
       normalRecovered,
       normalFailed,
       normalPassed: Math.max(0, baseQuantity - normalFailed),
+      fieldRecovered,
+      fieldFailed,
+      fieldPassed: Math.max(0, baseQuantity - fieldFailed),
       xrayRecovered,
       xrayFailed,
       xrayPassed: Math.max(0, baseQuantity - xrayFailed)
@@ -189,6 +199,9 @@ export function getDefaultOrderProgress(order: Order): OrderProgress {
     normalPassed: 0,
     normalFailed: 0,
     normalRecovered: 0,
+    fieldPassed: 0,
+    fieldFailed: 0,
+    fieldRecovered: 0,
     xrayPassed: 0,
     xrayFailed: 0,
     xrayRecovered: 0
@@ -209,6 +222,7 @@ export function groupOrdersByCustomer(orders: Order[], progressByOrder: Map<stri
       totalQuantity: customerOrders.reduce((sum, order) => sum + order.quantity, 0),
       inboundQuantity: customerOrders.reduce((sum, order) => sum + Number(order.inbound_quantity || 0), 0),
       normalFailed: customerOrders.reduce((sum, order) => sum + (progressByOrder.get(order.id)?.normalFailed ?? 0), 0),
+      fieldFailed: customerOrders.reduce((sum, order) => sum + (progressByOrder.get(order.id)?.fieldFailed ?? 0), 0),
       xrayFailed: customerOrders.reduce((sum, order) => sum + (progressByOrder.get(order.id)?.xrayFailed ?? 0), 0),
       orders: [...customerOrders].sort(sortOrdersByShippingDate)
     }))

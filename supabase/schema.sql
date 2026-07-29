@@ -161,7 +161,7 @@ create table if not exists public.registration_invites (
 alter table public.inspection_records drop constraint if exists inspection_records_defect_type_check;
 alter table public.inspection_records add column if not exists inspection_stage text not null default 'normal';
 alter table public.inspection_records drop constraint if exists inspection_records_inspection_stage_check;
-alter table public.inspection_records add constraint inspection_records_inspection_stage_check check (inspection_stage in ('normal', 'xray'));
+alter table public.inspection_records add constraint inspection_records_inspection_stage_check check (inspection_stage in ('normal', 'xray', 'field'));
 
 alter table public.orders enable row level security;
 alter table public.order_items enable row level security;
@@ -590,7 +590,7 @@ create table if not exists public.reinspection_records (
 );
 
 alter table public.reinspection_records drop constraint if exists reinspection_records_inspection_stage_check;
-alter table public.reinspection_records add constraint reinspection_records_inspection_stage_check check (inspection_stage in ('normal', 'xray'));
+alter table public.reinspection_records add constraint reinspection_records_inspection_stage_check check (inspection_stage in ('normal', 'xray', 'field'));
 alter table public.reinspection_records enable row level security;
 
 drop policy if exists "users can read reinspection records" on public.reinspection_records;

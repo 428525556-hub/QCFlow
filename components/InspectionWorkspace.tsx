@@ -28,7 +28,8 @@ function planLabel(plan?: string | null) {
 }
 
 function stageMismatch(plan: string | null | undefined, stage: InspectionStage) {
-  return (plan === "normal" && stage === "xray") || (plan === "xray" && stage === "normal");
+  if (stage === "xray") return plan === "normal";
+  return plan === "xray";
 }
 
 export function InspectionWorkspace({ orderId, stage, title, subtitle, groups }: Props) {

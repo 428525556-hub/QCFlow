@@ -2,7 +2,7 @@ export type Json = string | number | boolean | null | { [key: string]: Json | un
 
 export type OrderStatus = "未开始" | "检品中" | "已完成";
 
-export type InspectionStage = "normal" | "xray";
+export type InspectionStage = "normal" | "xray" | "field";
 export type InspectionPlan = "normal" | "xray" | "both";
 
 export type DefectType = string;

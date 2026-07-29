@@ -124,7 +124,7 @@ export default function ReportPage() {
       const visibleRows = rows.slice(pageIndex * rowsPerPage, (pageIndex + 1) * rowsPerPage);
       visibleRows.forEach((record, index) => {
         const y = 225 + index * 6.3;
-        const stage = record.inspection_stage === "xray" ? "X線" : "検品";
+        const stage = record.inspection_stage === "xray" ? "X線" : record.inspection_stage === "field" ? "出差検品" : "検品";
         writeBox(context, `${stage} ${record.color || "-"} / ${record.size || "-"} ${record.defect_type} x${record.finalQuantity}`, 470, y, 67, 5.5, {
           size: 6,
           bold: true,
@@ -147,7 +147,7 @@ export default function ReportPage() {
 
     const finalRows = report.finalRecordRows.filter((record) => record.finalQuantity > 0);
     const detailRows = finalRows.length > 0 ? finalRows : report.finalRecordRows;
-    const stageText = (stage: string) => (stage === "xray" ? "X線" : "検品");
+    const stageText = (stage: string) => (stage === "xray" ? "X線" : stage === "field" ? "出差検品" : "検品");
     const allDefects = report.grouped.flatMap((group) => group.items.map((item) => ({ group: group.group, type: item.type, quantity: item.quantity })));
     const reportDefects = allDefects.filter((item) => item.quantity > 0);
     const leftColumns = ["NO", "品番", "注文NO", "カラー", "サイズ", "検品数", "区分", "備考"];
@@ -426,7 +426,7 @@ export default function ReportPage() {
               )}
               {reinspections.map((item) => (
                 <tr key={item.id}>
-                  <td className="border border-slate-300 px-3 py-2 font-black">{item.inspection_stage === "xray" ? "X光" : "普通检品"}</td>
+                  <td className="border border-slate-300 px-3 py-2 font-black">{item.inspection_stage === "xray" ? "X光" : item.inspection_stage === "field" ? "出差检品" : "普通检品"}</td>
                   <td className="border border-slate-300 px-3 py-2">{item.defect_type}</td>
                   <td className="border border-slate-300 px-3 py-2">{item.color || "-"}</td>
                   <td className="border border-slate-300 px-3 py-2">{item.size || "-"}</td>

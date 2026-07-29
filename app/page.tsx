@@ -6,7 +6,7 @@ import { percent, todayRange } from "@/lib/format";
 import { getDashboardData } from "@/src/api/ordersApi";
 import { buildDashboardMetrics, type DashboardMetrics } from "@/src/services/orderService";
 import type { InspectionRecord, Order } from "@/lib/types";
-import { Activity, CalendarDays, CheckCircle2, ClipboardList, PackageCheck, PackageOpen, PackagePlus, PackageSearch, PlayCircle, ScanLine, Truck } from "lucide-react";
+import { Activity, BriefcaseBusiness, CalendarDays, CheckCircle2, ClipboardList, PackageCheck, PackageOpen, PackagePlus, PackageSearch, PlayCircle, ScanLine, Truck } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
@@ -48,9 +48,9 @@ export default function DashboardPage() {
           <div>
             <p className="text-sm font-bold text-sky-300">QCFlow Dashboard</p>
             <h1 className="mt-2 text-3xl font-black tracking-normal">现场工作台</h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-blue-100">订单入库、普通检品、X线检品和出货日程分开处理。</p>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-blue-100">订单入库、普通检品、出差检品、X线检品和出货日程分开处理。</p>
           </div>
-          <div className="grid grid-cols-2 gap-3 md:min-w-[760px] md:grid-cols-8">
+          <div className="grid grid-cols-2 gap-3 md:min-w-[860px] md:grid-cols-9">
             <Link href="/reservations/new" className="primary-btn bg-sky-400 text-blue-950">
               <PackageSearch size={18} />
               预约
@@ -66,6 +66,10 @@ export default function DashboardPage() {
             <Link href="/orders" className="secondary-btn border-slate-700 bg-slate-900 text-white">
               <PlayCircle size={18} />
               检品
+            </Link>
+            <Link href="/orders" className="secondary-btn border-slate-700 bg-slate-900 text-white">
+              <BriefcaseBusiness size={18} />
+              出差
             </Link>
             <Link href="/orders" className="secondary-btn border-slate-700 bg-slate-900 text-white">
               <ScanLine size={18} />

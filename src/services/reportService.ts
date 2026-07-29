@@ -1,5 +1,5 @@
 import { percent } from "@/lib/format";
-import { defectGroups, xrayDefectGroups } from "@/lib/types";
+import { normalDefectGroups, xrayDefectGroups } from "@/lib/types";
 import type { InspectionRecord, Order, ReinspectionRecord } from "@/src/types";
 
 export type FinalInspectionRecord = InspectionRecord & {
@@ -53,13 +53,25 @@ export function buildInspectionReportSummary(order: Order | null, records: Inspe
   const defectQty = Math.max(0, originalDefectQty - recoveredQty);
   const adjustedQuantity = (record: InspectionRecord) => Math.max(0, Number(record.quantity || 0) - (recoveredBySource.get(record.id) ?? 0));
 
-  const normalGrouped = defectGroups.map((group) => {
+  const normalGrouped = normalDefectGroups.map((group) => {
     const items = group.items.map((type) => ({
       type,
-      quantity: records.filter((record) => record.inspection_stage !== "xray" && record.defect_type === type).reduce((sum, record) => sum + adjustedQuantity(record), 0)
+      quantity: records.filter((record) => record.inspection_stage === "normal" && record.defect_type === type).reduce((sum, record) => sum + adjustedQuantity(record), 0)
     }));
     return {
       group: `検品-${group.group}`,
+      quantity: items.reduce((sum, item) => sum + item.quantity, 0),
+      items
+    };
+  });
+
+  const fieldGrouped = normalDefectGroups.map((group) => {
+    const items = group.items.map((type) => ({
+      type,
+      quantity: records.filter((record) => record.inspection_stage === "field" && record.defect_type === type).reduce((sum, record) => sum + adjustedQuantity(record), 0)
+    }));
+    return {
+      group: `出差検品-${group.group}`,
       quantity: items.reduce((sum, item) => sum + item.quantity, 0),
       items
     };
@@ -93,7 +105,7 @@ export function buildInspectionReportSummary(order: Order | null, records: Inspe
     originalDefectQty,
     recoveredQty,
     confirmedFailedQty,
-    grouped: [...normalGrouped, ...xrayGrouped],
+    grouped: [...normalGrouped, ...fieldGrouped, ...xrayGrouped],
     rate: percent(defectQty, total),
     finalRecordRows: records.map((record) => ({
       ...record,

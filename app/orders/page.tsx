@@ -6,7 +6,7 @@ import { shortDate } from "@/lib/format";
 import { getOrdersProgressData, subscribeOrdersProgress } from "@/src/api/ordersApi";
 import { buildOrderProgressMap, getDefaultOrderProgress, groupOrdersByCustomer, type OrderProgress } from "@/src/services/orderService";
 import type { InspectionRecord, Order, ReinspectionRecord } from "@/lib/types";
-import { ArrowRight, ChevronLeft, FileText, PackageCheck, Plus, RefreshCw, ScanLine, Settings2, Truck } from "lucide-react";
+import { ArrowRight, BriefcaseBusiness, ChevronLeft, FileText, PackageCheck, Plus, RefreshCw, ScanLine, Settings2, Truck } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -119,8 +119,9 @@ export default function OrdersPage() {
           </div>
         </div>
 
-        <div className="mt-4 grid grid-cols-2 gap-3">
+        <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-3">
           <ProgressPill label={t("normalInspection")} passed={progress.normalPassed} failed={progress.normalFailed} recovered={progress.normalRecovered} />
+          <ProgressPill label={t("fieldQc")} passed={progress.fieldPassed} failed={progress.fieldFailed} recovered={progress.fieldRecovered} />
           <ProgressPill label={t("xrayQc")} passed={progress.xrayPassed} failed={progress.xrayFailed} recovered={progress.xrayRecovered} />
         </div>
 
@@ -155,10 +156,14 @@ export default function OrdersPage() {
           </div>
         </dl>
 
-        <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-6">
+        <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-7">
           <Link href={`/inspect/${order.id}`} className="secondary-btn">
             <ArrowRight size={18} />
             {t("inspect")}
+          </Link>
+          <Link href={`/field-inspect/${order.id}`} className="secondary-btn">
+            <BriefcaseBusiness size={18} />
+            出差
           </Link>
           <Link href={`/xray/${order.id}`} className="secondary-btn">
             <ScanLine size={18} />
@@ -194,7 +199,7 @@ export default function OrdersPage() {
               <div className="min-w-0">
                 <h2 className="truncate text-xl font-black text-blue-950">{group.customerName}</h2>
                 <p className="mt-1 text-xs font-bold text-blue-700">
-                  {group.orders.length} {t("orderCount")} / {t("normalFinalFailed")} {group.normalFailed} / {t("xrayFinalFailed")} {group.xrayFailed}
+                  {group.orders.length} {t("orderCount")} / {t("normalFinalFailed")} {group.normalFailed} / {t("fieldFinalFailed")} {group.fieldFailed} / {t("xrayFinalFailed")} {group.xrayFailed}
                 </p>
               </div>
               <div className="shrink-0 text-right">
@@ -253,9 +258,10 @@ export default function OrdersPage() {
                   <p className="text-xl font-black text-blue-950">{order.quantity}</p>
                 </div>
               </div>
-              <div className="mt-3 grid grid-cols-3 gap-2 text-center text-xs font-bold">
+              <div className="mt-3 grid grid-cols-4 gap-2 text-center text-xs font-bold">
                 <div className="rounded bg-blue-50 px-2 py-2 text-blue-800">入库 {order.inbound_quantity || 0}</div>
                 <div className="rounded bg-emerald-50 px-2 py-2 text-emerald-700">检品过 {progress.normalPassed}</div>
+                <div className="rounded bg-indigo-50 px-2 py-2 text-indigo-700">出差过 {progress.fieldPassed}</div>
                 <div className="rounded bg-sky-50 px-2 py-2 text-sky-700">X线过 {progress.xrayPassed}</div>
               </div>
             </button>

@@ -5,6 +5,7 @@ import { useLanguage } from "@/components/LanguageProvider";
 import { isAdminEmail } from "@/lib/security";
 import {
   Archive,
+  BriefcaseBusiness,
   CalendarDays,
   ClipboardList,
   FileText,
@@ -44,6 +45,7 @@ const groups = [
     descriptionKey: "onsiteDesc",
     actions: [
       { href: "/orders", labelKey: "startInspection", icon: ClipboardList },
+      { href: "/orders", labelKey: "fieldInspection", icon: BriefcaseBusiness },
       { href: "/orders", labelKey: "xrayInspection", icon: ScanLine },
       { href: "/orders", labelKey: "reinspection", icon: RefreshCw }
     ]

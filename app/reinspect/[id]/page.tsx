@@ -23,7 +23,9 @@ type DefectRow = InspectionRecord & {
 };
 
 function stageLabel(stage: string) {
-  return stage === "xray" ? "X光" : "普通检品";
+  if (stage === "xray") return "X光";
+  if (stage === "field") return "出差检品";
+  return "普通检品";
 }
 
 export default function ReinspectPage() {
