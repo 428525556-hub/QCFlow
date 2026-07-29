@@ -15,7 +15,7 @@ export const GET = withApiHandler<Context>(async (request, { params }) => {
 
   const { data, error } = await query.single();
   if (error) throw databaseError(error, error.code === "PGRST116" ? 404 : 400);
-  if (profile.role === "field_inspector" && data.customer_name !== profile.customer_name) throw new ApiError("Forbidden", 403, "FORBIDDEN");
+  if (profile.role === "field_inspector" && (data.customer_name !== profile.customer_name || data.inspection_plan !== "field")) throw new ApiError("Forbidden", 403, "FORBIDDEN");
   return apiSuccess(data);
 });
 

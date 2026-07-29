@@ -42,7 +42,8 @@ const STATUS_OPTIONS = ["未开始", "检品中", "已完成"] as OrderStatus[];
 const PLAN_OPTIONS: { value: InspectionPlan; label: string }[] = [
   { value: "both", label: "检品 + X线" },
   { value: "normal", label: "只做检品" },
-  { value: "xray", label: "只做X线" }
+  { value: "xray", label: "只做X线" },
+  { value: "field", label: "出差检品" }
 ];
 
 function toNumber(value: string | number | null | undefined) {

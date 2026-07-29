@@ -1,7 +1,7 @@
 "use client";
 
 import { useCurrentProfile } from "@/components/AuthGuard";
-import { getClientOrdersProgress } from "@/src/api/ordersApi";
+import { getClientOrdersProgress, getOrdersProgressData } from "@/src/api/ordersApi";
 import { attachClientOrderDefects, getClientOrderTotals, type ClientOrderWithDefects } from "@/src/services/orderService";
 import type { InspectionRecord, Order } from "@/lib/types";
 import { BriefcaseBusiness, FileText, Search } from "lucide-react";
@@ -16,17 +16,18 @@ export default function FieldInspectionPortalPage() {
 
   useEffect(() => {
     async function load() {
-      if (!profile || profile.role !== "field_inspector") return;
+      if (!profile || !["admin", "staff", "field_inspector"].includes(profile.role)) return;
       setLoading(true);
       setMessage("");
-      const { data, error } = await getClientOrdersProgress(profile.customer_name ?? "");
+      const { data, error } = profile.role === "field_inspector" ? await getClientOrdersProgress(profile.customer_name ?? "") : await getOrdersProgressData();
       if (error) {
         setMessage(error.message);
         setLoading(false);
         return;
       }
       const records = (data.records ?? []) as InspectionRecord[];
-      setOrders(attachClientOrderDefects((data.orders ?? []) as Order[], records));
+      const fieldOrders = ((data.orders ?? []) as Order[]).filter((order) => order.inspection_plan === "field");
+      setOrders(attachClientOrderDefects(fieldOrders, records.filter((record) => record.inspection_stage === "field" && fieldOrders.some((order) => order.id === record.order_id))));
       setLoading(false);
     }
 
@@ -35,8 +36,8 @@ export default function FieldInspectionPortalPage() {
 
   const totals = useMemo(() => getClientOrderTotals(orders), [orders]);
 
-  if (!profile || profile.role !== "field_inspector") {
-    return <div className="panel p-5 text-sm text-slate-500">这个入口只开放给出差检品账号。</div>;
+  if (!profile || !["admin", "staff", "field_inspector"].includes(profile.role)) {
+    return <div className="panel p-5 text-sm text-slate-500">这个入口只开放给总号和出差检品账号。</div>;
   }
 
   return (
@@ -44,7 +45,7 @@ export default function FieldInspectionPortalPage() {
       <section className="rounded border border-blue-900 bg-blue-950 p-5 text-white">
         <p className="text-sm font-bold text-sky-300">Field QC</p>
         <h1 className="mt-2 text-3xl font-black tracking-normal">出差检品</h1>
-        <p className="mt-2 text-sm text-blue-100">账号范围：{profile.customer_name || "未设置客户名称"}</p>
+        <p className="mt-2 text-sm text-blue-100">账号范围：{profile.role === "field_inspector" ? profile.customer_name || "未设置客户名称" : "全部出差检品订单"}</p>
       </section>
 
       <section className="grid grid-cols-3 gap-3">

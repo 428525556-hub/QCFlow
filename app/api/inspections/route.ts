@@ -43,11 +43,12 @@ export const POST = withApiHandler(async (request) => {
   const payload = (await request.json()) as InspectionInsert;
   const supabase = createRequestSupabaseClient(request);
 
-  if (profile.role === "field_inspector") {
-    if (payload.inspection_stage !== "field") throw new ApiError("Field inspector can only create field inspection records", 403, "FORBIDDEN");
-    const { data: order, error: orderError } = await supabase.from("orders").select("customer_name").eq("id", payload.order_id).single();
+  if (payload.inspection_stage === "field" || profile.role === "field_inspector") {
+    if (profile.role === "field_inspector" && payload.inspection_stage !== "field") throw new ApiError("Field inspector can only create field inspection records", 403, "FORBIDDEN");
+    const { data: order, error: orderError } = await supabase.from("orders").select("customer_name, inspection_plan").eq("id", payload.order_id).single();
     if (orderError) throw databaseError(orderError, orderError.code === "PGRST116" ? 404 : 400);
-    if (order.customer_name !== profile.customer_name) throw new ApiError("Forbidden", 403, "FORBIDDEN");
+    if (payload.inspection_stage === "field" && order.inspection_plan !== "field") throw new ApiError("This order is not a field inspection order", 403, "FORBIDDEN");
+    if (profile.role === "field_inspector" && order.customer_name !== profile.customer_name) throw new ApiError("Forbidden", 403, "FORBIDDEN");
   }
 
   const { data, error } = await supabase

@@ -25,7 +25,7 @@ alter table public.orders add column if not exists inbound_quantity integer not 
 alter table public.orders add column if not exists inspection_plan text not null default 'both';
 alter table public.orders add column if not exists reservation_remark text;
 alter table public.orders drop constraint if exists orders_inspection_plan_check;
-alter table public.orders add constraint orders_inspection_plan_check check (inspection_plan in ('normal', 'xray', 'both'));
+alter table public.orders add constraint orders_inspection_plan_check check (inspection_plan in ('normal', 'xray', 'both', 'field'));
 alter table public.orders drop constraint if exists orders_order_type_check;
 alter table public.orders add constraint orders_order_type_check check (order_type in ('reservation', 'inbound'));
 alter table public.orders add column if not exists inbound_date date;
@@ -430,7 +430,7 @@ using (
   or (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
   or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role in ('admin', 'staff'))
   or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role = 'client' and p.customer_name = orders.customer_name)
-  or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role = 'field_inspector' and p.customer_name = orders.customer_name)
+  or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role = 'field_inspector' and p.customer_name = orders.customer_name and orders.inspection_plan = 'field')
 );
 
 drop policy if exists "users can insert own orders" on public.orders;
@@ -471,7 +471,12 @@ using (
   or exists (
     select 1 from public.orders o
     join public.user_profiles p on p.id = auth.uid()
-    where o.id = order_items.order_id and p.role in ('client', 'field_inspector') and p.customer_name = o.customer_name
+    where o.id = order_items.order_id and p.role = 'client' and p.customer_name = o.customer_name
+  )
+  or exists (
+    select 1 from public.orders o
+    join public.user_profiles p on p.id = auth.uid()
+    where o.id = order_items.order_id and p.role = 'field_inspector' and p.customer_name = o.customer_name and o.inspection_plan = 'field'
   )
 );
 
@@ -490,7 +495,7 @@ using (
   or exists (
     select 1 from public.orders o
     join public.user_profiles p on p.id = auth.uid()
-    where o.id = inspection_records.order_id and p.role = 'field_inspector' and p.customer_name = o.customer_name and inspection_records.inspection_stage = 'field'
+    where o.id = inspection_records.order_id and p.role = 'field_inspector' and p.customer_name = o.customer_name and o.inspection_plan = 'field' and inspection_records.inspection_stage = 'field'
   )
 );
 
@@ -505,7 +510,7 @@ with check (
     or exists (
       select 1 from public.orders o
       join public.user_profiles p on p.id = auth.uid()
-      where o.id = inspection_records.order_id and p.role = 'field_inspector' and p.customer_name = o.customer_name and inspection_records.inspection_stage = 'field'
+      where o.id = inspection_records.order_id and p.role = 'field_inspector' and p.customer_name = o.customer_name and o.inspection_plan = 'field' and inspection_records.inspection_stage = 'field'
     )
   )
 );
@@ -529,7 +534,12 @@ using (
   or exists (
     select 1 from public.orders o
     join public.user_profiles p on p.id = auth.uid()
-    where o.id = order_attachments.order_id and p.role in ('client', 'field_inspector') and p.customer_name = o.customer_name
+    where o.id = order_attachments.order_id and p.role = 'client' and p.customer_name = o.customer_name
+  )
+  or exists (
+    select 1 from public.orders o
+    join public.user_profiles p on p.id = auth.uid()
+    where o.id = order_attachments.order_id and p.role = 'field_inspector' and p.customer_name = o.customer_name and o.inspection_plan = 'field'
   )
 );
 
@@ -634,7 +644,7 @@ using (
   or exists (
     select 1 from public.orders o
     join public.user_profiles p on p.id = auth.uid()
-    where o.id = reinspection_records.order_id and p.role = 'field_inspector' and p.customer_name = o.customer_name and reinspection_records.inspection_stage = 'field'
+    where o.id = reinspection_records.order_id and p.role = 'field_inspector' and p.customer_name = o.customer_name and o.inspection_plan = 'field' and reinspection_records.inspection_stage = 'field'
   )
 );
 

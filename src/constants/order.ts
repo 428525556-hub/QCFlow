@@ -7,11 +7,11 @@ export const ORDER_TYPES = {
   inbound: "inbound"
 } as const;
 
-export const INSPECTION_PLANS: InspectionPlan[] = ["normal", "xray", "both"];
+export const INSPECTION_PLANS: InspectionPlan[] = ["normal", "xray", "both", "field"];
 
 export const INSPECTION_PLAN_LABELS: Record<InspectionPlan, string> = {
   normal: "检品",
   xray: "X线",
-  both: "检品 + X线"
+  both: "检品 + X线",
+  field: "出差检品"
 };
-

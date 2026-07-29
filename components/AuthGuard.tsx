@@ -64,7 +64,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
       if (nextProfile?.role === "client" && !pathname.startsWith("/client") && pathname !== "/login") router.replace("/client");
       if (nextProfile?.role !== "client" && pathname.startsWith("/client")) router.replace("/");
       if (nextProfile?.role === "field_inspector" && !pathname.startsWith("/field") && !pathname.startsWith("/field-inspect") && !pathname.startsWith("/report") && pathname !== "/login") router.replace("/field");
-      if (nextProfile?.role !== "field_inspector" && (pathname === "/field" || pathname.startsWith("/field/"))) router.replace("/");
+      if (!["admin", "staff", "field_inspector"].includes(nextProfile?.role ?? "") && (pathname === "/field" || pathname.startsWith("/field/"))) router.replace("/");
     });
 
     const { data: listener } = onAuthStateChange(async (_event, session) => {
@@ -75,7 +75,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
       if (nextProfile?.role === "client" && !pathname.startsWith("/client") && pathname !== "/login") router.replace("/client");
       if (nextProfile?.role !== "client" && pathname.startsWith("/client")) router.replace("/");
       if (nextProfile?.role === "field_inspector" && !pathname.startsWith("/field") && !pathname.startsWith("/field-inspect") && !pathname.startsWith("/report") && pathname !== "/login") router.replace("/field");
-      if (nextProfile?.role !== "field_inspector" && (pathname === "/field" || pathname.startsWith("/field/"))) router.replace("/");
+      if (!["admin", "staff", "field_inspector"].includes(nextProfile?.role ?? "") && (pathname === "/field" || pathname.startsWith("/field/"))) router.replace("/");
     });
 
     return () => {

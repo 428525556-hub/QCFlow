@@ -22,8 +22,9 @@ export default function DashboardPage() {
     async function load() {
       setLoading(true);
       const { data } = await getDashboardData();
-      setOrders((data.orders ?? []) as Order[]);
-      setRecords((data.records ?? []) as InspectionRecord[]);
+      const dashboardOrders = ((data.orders ?? []) as Order[]).filter((order) => order.inspection_plan !== "field");
+      setOrders(dashboardOrders);
+      setRecords(((data.records ?? []) as InspectionRecord[]).filter((record) => dashboardOrders.some((order) => order.id === record.order_id)));
       setLoading(false);
     }
 
@@ -67,7 +68,7 @@ export default function DashboardPage() {
               <PlayCircle size={18} />
               检品
             </Link>
-            <Link href="/orders" className="secondary-btn border-slate-700 bg-slate-900 text-white">
+            <Link href="/field" className="secondary-btn border-slate-700 bg-slate-900 text-white">
               <BriefcaseBusiness size={18} />
               出差
             </Link>

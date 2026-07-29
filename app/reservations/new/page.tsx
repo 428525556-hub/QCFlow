@@ -585,6 +585,7 @@ export default function NewReservationPage() {
               <option value="normal">只做检品</option>
               <option value="xray">只做 X 光</option>
               <option value="both">检品和 X 光都要</option>
+              <option value="field">出差检品</option>
             </select>
           </div>
           <div>

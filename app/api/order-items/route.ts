@@ -14,9 +14,9 @@ export const GET = withApiHandler(async (request) => {
 
   if (profile.role === "field_inspector") {
     if (!orderId) return apiSuccess([]);
-    const { data: order, error: orderError } = await supabase.from("orders").select("customer_name").eq("id", orderId).single();
+    const { data: order, error: orderError } = await supabase.from("orders").select("customer_name, inspection_plan").eq("id", orderId).single();
     if (orderError) throw databaseError(orderError, orderError.code === "PGRST116" ? 404 : 400);
-    if (order.customer_name !== profile.customer_name) throw new ApiError("Forbidden", 403, "FORBIDDEN");
+    if (order.customer_name !== profile.customer_name || order.inspection_plan !== "field") throw new ApiError("Forbidden", 403, "FORBIDDEN");
   }
 
   if (orderId) query = query.eq("order_id", orderId);

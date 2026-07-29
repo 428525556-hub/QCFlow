@@ -24,10 +24,13 @@ type Props = {
 function planLabel(plan?: string | null) {
   if (plan === "normal") return "只做检品";
   if (plan === "xray") return "只做 X 光";
+  if (plan === "field") return "出差检品";
   return "检品和 X 光都要";
 }
 
 function stageMismatch(plan: string | null | undefined, stage: InspectionStage) {
+  if (plan === "field") return stage !== "field";
+  if (stage === "field") return plan !== "field";
   if (stage === "xray") return plan === "normal";
   return plan === "xray";
 }

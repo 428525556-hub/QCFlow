@@ -45,7 +45,7 @@ export default function OrdersPage() {
   const load = useCallback(async () => {
     setLoading(true);
     const { data } = await getOrdersProgressData();
-    setOrders(data.orders);
+    setOrders(data.orders.filter((order) => order.inspection_plan !== "field"));
     setRecords(data.records);
     setReinspections(data.reinspections);
     setLoading(false);
@@ -161,10 +161,12 @@ export default function OrdersPage() {
             <ArrowRight size={18} />
             {t("inspect")}
           </Link>
-          <Link href={`/field-inspect/${order.id}`} className="secondary-btn">
-            <BriefcaseBusiness size={18} />
-            出差
-          </Link>
+          {order.inspection_plan === "field" && (
+            <Link href={`/field-inspect/${order.id}`} className="secondary-btn">
+              <BriefcaseBusiness size={18} />
+              出差
+            </Link>
+          )}
           <Link href={`/xray/${order.id}`} className="secondary-btn">
             <ScanLine size={18} />
             {t("xray")}
