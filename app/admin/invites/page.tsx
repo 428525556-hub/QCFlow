@@ -12,7 +12,7 @@ export default function AdminInvitesPage() {
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [days, setDays] = useState(7);
-  const [accountRole, setAccountRole] = useState<"staff" | "client">("staff");
+  const [accountRole, setAccountRole] = useState<"staff" | "client" | "field_inspector">("staff");
   const [customerName, setCustomerName] = useState("");
   const [newCode, setNewCode] = useState("");
   const [message, setMessage] = useState("");
@@ -54,8 +54,8 @@ export default function AdminInvitesPage() {
       setCreating(false);
       return;
     }
-    if (accountRole === "client" && !customerName.trim()) {
-      setMessage("客户账号必须填写客户名称，并且要和订单里的客户名称完全一致。");
+    if ((accountRole === "client" || accountRole === "field_inspector") && !customerName.trim()) {
+      setMessage("客户账号和出差检品账号必须填写客户名称，并且要和订单里的客户名称完全一致。");
       setCreating(false);
       return;
     }
@@ -68,7 +68,7 @@ export default function AdminInvitesPage() {
       created_by_email: ADMIN_EMAIL,
       code_hash: codeHash,
       role: accountRole,
-      customer_name: accountRole === "client" ? customerName.trim() : null,
+      customer_name: accountRole === "client" || accountRole === "field_inspector" ? customerName.trim() : null,
       expires_at: expiresAt
     });
 
@@ -137,13 +137,14 @@ export default function AdminInvitesPage() {
 
         <label className="mt-4 block space-y-1">
           <span className="label">账号类型</span>
-          <select className="field" value={accountRole} onChange={(event) => setAccountRole(event.target.value as "staff" | "client")}>
+          <select className="field" value={accountRole} onChange={(event) => setAccountRole(event.target.value as "staff" | "client" | "field_inspector")}>
             <option value="staff">员工账号：可以使用后台功能</option>
             <option value="client">客户账号：只能查看自己的订单和报告</option>
+            <option value="field_inspector">出差检品账号：只能查看指定客户的出差检品</option>
           </select>
         </label>
 
-        {accountRole === "client" && (
+        {(accountRole === "client" || accountRole === "field_inspector") && (
           <label className="mt-4 block space-y-1">
             <span className="label">客户名称</span>
             <input className="field" value={customerName} onChange={(event) => setCustomerName(event.target.value)} placeholder="必须和订单里的客户名称完全一致" />
@@ -184,7 +185,7 @@ export default function AdminInvitesPage() {
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <p className="font-black text-blue-950">{status}</p>
-                  <p className="mt-1 text-sm text-slate-500">账号类型：{invite.role === "client" ? `客户 ${invite.customer_name ?? ""}` : "员工"}</p>
+                  <p className="mt-1 text-sm text-slate-500">账号类型：{invite.role === "client" ? `客户 ${invite.customer_name ?? ""}` : invite.role === "field_inspector" ? `出差检品 ${invite.customer_name ?? ""}` : "员工"}</p>
                   <p className="mt-1 text-sm text-slate-500">过期时间：{new Date(invite.expires_at).toLocaleString("zh-CN")}</p>
                   {invite.used_by_email && <p className="mt-1 text-sm text-slate-500">使用账号：{invite.used_by_email}</p>}
                 </div>

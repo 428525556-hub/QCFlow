@@ -1,16 +1,24 @@
 import { apiSuccess } from "@/src/server/apiResponse";
 import { withApiHandler } from "@/src/server/apiHandler";
 import { ApiError, databaseError } from "@/src/server/errors";
-import { createRequestSupabaseClient, requireRequestUser } from "@/src/server/supabaseServer";
+import { createRequestSupabaseClient, requireRequestProfile, requireRequestUser } from "@/src/server/supabaseServer";
 import type { Database } from "@/src/types";
 
 type OrderItemInsert = Database["public"]["Tables"]["order_items"]["Insert"];
 
 export const GET = withApiHandler(async (request) => {
-  await requireRequestUser(request);
+  const { profile } = await requireRequestProfile(request);
   const supabase = createRequestSupabaseClient(request);
   const orderId = request.nextUrl.searchParams.get("orderId");
   let query = supabase.from("order_items").select("*");
+
+  if (profile.role === "field_inspector") {
+    if (!orderId) return apiSuccess([]);
+    const { data: order, error: orderError } = await supabase.from("orders").select("customer_name").eq("id", orderId).single();
+    if (orderError) throw databaseError(orderError, orderError.code === "PGRST116" ? 404 : 400);
+    if (order.customer_name !== profile.customer_name) throw new ApiError("Forbidden", 403, "FORBIDDEN");
+  }
+
   if (orderId) query = query.eq("order_id", orderId);
 
   const { data, error } = await query.order("color").order("size");

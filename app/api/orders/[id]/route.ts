@@ -1,20 +1,21 @@
 import { apiSuccess } from "@/src/server/apiResponse";
 import { withApiHandler } from "@/src/server/apiHandler";
-import { databaseError } from "@/src/server/errors";
-import { createRequestSupabaseClient, requireRequestUser } from "@/src/server/supabaseServer";
+import { ApiError, databaseError } from "@/src/server/errors";
+import { createRequestSupabaseClient, requireRequestProfile, requireRequestUser } from "@/src/server/supabaseServer";
 import type { Database } from "@/src/types";
 
 type OrderUpdate = Database["public"]["Tables"]["orders"]["Update"];
 type Context = { params: { id: string } };
 
 export const GET = withApiHandler<Context>(async (request, { params }) => {
-  await requireRequestUser(request);
+  const { profile } = await requireRequestProfile(request);
   const supabase = createRequestSupabaseClient(request);
   let query = supabase.from("orders").select("*").eq("id", params.id);
   if (request.nextUrl.searchParams.get("includeDeleted") !== "true") query = query.is("deleted_at", null);
 
   const { data, error } = await query.single();
   if (error) throw databaseError(error, error.code === "PGRST116" ? 404 : 400);
+  if (profile.role === "field_inspector" && data.customer_name !== profile.customer_name) throw new ApiError("Forbidden", 403, "FORBIDDEN");
   return apiSuccess(data);
 });
 
@@ -36,4 +37,3 @@ export const DELETE = withApiHandler<Context>(async (request, { params }) => {
   if (error) throw databaseError(error);
   return apiSuccess({ id: params.id });
 });
-

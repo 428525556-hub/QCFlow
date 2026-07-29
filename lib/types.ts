@@ -12,7 +12,7 @@ export type DefectGroup = {
   items: string[];
 };
 
-export type UserRole = "admin" | "staff" | "client";
+export type UserRole = "admin" | "staff" | "client" | "field_inspector";
 
 export type UserProfile = {
   id: string;
@@ -187,7 +187,7 @@ export type RegistrationInvite = {
   created_by_user_id: string | null;
   created_by_email: string;
   code_hash: string;
-  role: "staff" | "client";
+  role: "staff" | "client" | "field_inspector";
   customer_name: string | null;
   active: boolean;
   expires_at: string;

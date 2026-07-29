@@ -1,18 +1,22 @@
 import { apiSuccess } from "@/src/server/apiResponse";
 import { withApiHandler } from "@/src/server/apiHandler";
 import { databaseError } from "@/src/server/errors";
-import { createRequestSupabaseClient, requireRequestUser } from "@/src/server/supabaseServer";
+import { createRequestSupabaseClient, requireRequestProfile, requireRequestUser } from "@/src/server/supabaseServer";
 import type { Database } from "@/src/types";
 
 type OrderInsert = Database["public"]["Tables"]["orders"]["Insert"];
 
 export const GET = withApiHandler(async (request) => {
-  await requireRequestUser(request);
+  const { profile } = await requireRequestProfile(request);
   const supabase = createRequestSupabaseClient(request);
   const params = request.nextUrl.searchParams;
   let query = supabase.from("orders").select("*");
 
-  if (params.get("includeDeleted") !== "true") query = query.is("deleted_at", null);
+  if (profile.role === "field_inspector") {
+    query = query.eq("customer_name", profile.customer_name ?? "").is("deleted_at", null);
+  } else if (params.get("includeDeleted") !== "true") {
+    query = query.is("deleted_at", null);
+  }
   if (params.get("customerName")) query = query.eq("customer_name", params.get("customerName")!);
 
   const { data, error } = await query.order("shipping_date", { ascending: true, nullsFirst: false });
@@ -33,4 +37,3 @@ export const POST = withApiHandler(async (request) => {
   if (error) throw databaseError(error);
   return apiSuccess(data, 201);
 });
-

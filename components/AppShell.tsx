@@ -39,6 +39,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   const nav = useMemo(() => {
     if (profile?.role === "client") return [{ href: "/client", labelKey: "navClient", icon: Eye }];
+    if (profile?.role === "field_inspector") return [{ href: "/field", labelKey: "navField", icon: BriefcaseBusiness }];
     if (isAdminEmail(email)) {
       return [
         { href: "/", labelKey: "navHome", icon: Home },

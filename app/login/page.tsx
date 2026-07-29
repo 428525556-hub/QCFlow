@@ -59,7 +59,7 @@ export default function LoginPage() {
     }
 
     const role = (adminAccount ? "admin" : invite?.role ?? "staff") as UserRole;
-    const customerName = role === "client" ? invite?.customer_name ?? "" : null;
+    const customerName = role === "client" || role === "field_inspector" ? invite?.customer_name ?? "" : null;
     const { data, error } = await signUpWithProfile(normalizedEmail, password, {
       role,
       customer_name: customerName
@@ -88,7 +88,7 @@ export default function LoginPage() {
       });
     }
 
-    setMessage(role === "client" ? "客户账号已创建。登录后只能查看自己的订单和报告。" : "账号已创建，请登录进入系统。");
+    setMessage(role === "client" ? "客户账号已创建。登录后只能查看自己的订单和报告。" : role === "field_inspector" ? "出差检品账号已创建。登录后只能查看指定客户的出差检品。" : "账号已创建，请登录进入系统。");
     setLoading(false);
   }
 

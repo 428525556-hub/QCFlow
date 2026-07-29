@@ -37,8 +37,8 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     }
 
     const metadata = currentUser.user_metadata ?? {};
-    const role = currentUser.email === "shuoyuqc@163.com" ? "admin" : metadata.role === "client" ? "client" : "staff";
-    const customerName = role === "client" ? String(metadata.customer_name ?? "") : null;
+    const role = currentUser.email === "shuoyuqc@163.com" ? "admin" : metadata.role === "client" ? "client" : metadata.role === "field_inspector" ? "field_inspector" : "staff";
+    const customerName = role === "client" || role === "field_inspector" ? String(metadata.customer_name ?? "") : null;
     const nextProfile = {
       id: currentUser.id,
       email: currentUser.email ?? "",
@@ -60,18 +60,22 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
       const nextProfile = await ensureProfile(data.user);
       setLoading(false);
       if (!data.user && pathname !== "/login") router.replace("/login");
-      if (data.user && pathname === "/login") router.replace("/");
+      if (data.user && pathname === "/login") router.replace(nextProfile?.role === "client" ? "/client" : nextProfile?.role === "field_inspector" ? "/field" : "/");
       if (nextProfile?.role === "client" && !pathname.startsWith("/client") && pathname !== "/login") router.replace("/client");
       if (nextProfile?.role !== "client" && pathname.startsWith("/client")) router.replace("/");
+      if (nextProfile?.role === "field_inspector" && !pathname.startsWith("/field") && !pathname.startsWith("/field-inspect") && !pathname.startsWith("/report") && pathname !== "/login") router.replace("/field");
+      if (nextProfile?.role !== "field_inspector" && (pathname === "/field" || pathname.startsWith("/field/"))) router.replace("/");
     });
 
     const { data: listener } = onAuthStateChange(async (_event, session) => {
       setUser(session?.user ?? null);
       const nextProfile = await ensureProfile(session?.user ?? null);
       if (!session?.user && pathname !== "/login") router.replace("/login");
-      if (session?.user && pathname === "/login") router.replace("/");
+      if (session?.user && pathname === "/login") router.replace(nextProfile?.role === "client" ? "/client" : nextProfile?.role === "field_inspector" ? "/field" : "/");
       if (nextProfile?.role === "client" && !pathname.startsWith("/client") && pathname !== "/login") router.replace("/client");
       if (nextProfile?.role !== "client" && pathname.startsWith("/client")) router.replace("/");
+      if (nextProfile?.role === "field_inspector" && !pathname.startsWith("/field") && !pathname.startsWith("/field-inspect") && !pathname.startsWith("/report") && pathname !== "/login") router.replace("/field");
+      if (nextProfile?.role !== "field_inspector" && (pathname === "/field" || pathname.startsWith("/field/"))) router.replace("/");
     });
 
     return () => {

@@ -394,14 +394,14 @@ create table if not exists public.user_profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   created_at timestamptz not null default now(),
   email text not null,
-  role text not null default 'staff' check (role in ('admin', 'staff', 'client')),
+  role text not null default 'staff' check (role in ('admin', 'staff', 'client', 'field_inspector')),
   customer_name text
 );
 
 alter table public.registration_invites add column if not exists role text not null default 'staff';
 alter table public.registration_invites add column if not exists customer_name text;
 alter table public.registration_invites drop constraint if exists registration_invites_role_check;
-alter table public.registration_invites add constraint registration_invites_role_check check (role in ('staff', 'client'));
+alter table public.registration_invites add constraint registration_invites_role_check check (role in ('staff', 'client', 'field_inspector'));
 
 alter table public.user_profiles enable row level security;
 
@@ -430,6 +430,7 @@ using (
   or (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
   or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role in ('admin', 'staff'))
   or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role = 'client' and p.customer_name = orders.customer_name)
+  or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role = 'field_inspector' and p.customer_name = orders.customer_name)
 );
 
 drop policy if exists "users can insert own orders" on public.orders;
@@ -470,7 +471,7 @@ using (
   or exists (
     select 1 from public.orders o
     join public.user_profiles p on p.id = auth.uid()
-    where o.id = order_items.order_id and p.role = 'client' and p.customer_name = o.customer_name
+    where o.id = order_items.order_id and p.role in ('client', 'field_inspector') and p.customer_name = o.customer_name
   )
 );
 
@@ -485,6 +486,27 @@ using (
     select 1 from public.orders o
     join public.user_profiles p on p.id = auth.uid()
     where o.id = inspection_records.order_id and p.role = 'client' and p.customer_name = o.customer_name
+  )
+  or exists (
+    select 1 from public.orders o
+    join public.user_profiles p on p.id = auth.uid()
+    where o.id = inspection_records.order_id and p.role = 'field_inspector' and p.customer_name = o.customer_name and inspection_records.inspection_stage = 'field'
+  )
+);
+
+drop policy if exists "users can insert own records" on public.inspection_records;
+create policy "users can insert own records"
+on public.inspection_records for insert
+with check (
+  auth.uid() = user_id
+  and (
+    (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
+    or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role in ('admin', 'staff'))
+    or exists (
+      select 1 from public.orders o
+      join public.user_profiles p on p.id = auth.uid()
+      where o.id = inspection_records.order_id and p.role = 'field_inspector' and p.customer_name = o.customer_name and inspection_records.inspection_stage = 'field'
+    )
   )
 );
 
@@ -507,7 +529,7 @@ using (
   or exists (
     select 1 from public.orders o
     join public.user_profiles p on p.id = auth.uid()
-    where o.id = order_attachments.order_id and p.role = 'client' and p.customer_name = o.customer_name
+    where o.id = order_attachments.order_id and p.role in ('client', 'field_inspector') and p.customer_name = o.customer_name
   )
 );
 
@@ -608,6 +630,11 @@ using (
     select 1 from public.orders o
     join public.user_profiles p on p.id = auth.uid()
     where o.id = reinspection_records.order_id and p.role = 'client' and p.customer_name = o.customer_name
+  )
+  or exists (
+    select 1 from public.orders o
+    join public.user_profiles p on p.id = auth.uid()
+    where o.id = reinspection_records.order_id and p.role = 'field_inspector' and p.customer_name = o.customer_name and reinspection_records.inspection_stage = 'field'
   )
 );
 

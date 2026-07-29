@@ -15,6 +15,7 @@ const dictionary: Dictionary = {
   navOrders: { zh: "订单", en: "Orders", ja: "注文" },
   navCalendar: { zh: "日历", en: "Calendar", ja: "日程" },
   navClient: { zh: "客户", en: "Client", ja: "顧客" },
+  navField: { zh: "出差", en: "Field", ja: "出張" },
   navAdmin: { zh: "权限", en: "Access", ja: "権限" },
 
   workbenchEyebrow: { zh: "QCFlow Workbench", en: "QCFlow Workbench", ja: "QCFlow 作業台" },
