@@ -118,10 +118,9 @@ export default function NewInboundPage() {
 
     const nextInbound = Number(selectedOrder.inbound_quantity || 0) + inboundTotal;
     const { error: orderError } = await updateOrder(selectedOrder.id, {
-        inbound_quantity: nextInbound,
-        inbound_date: inboundDate || selectedOrder.inbound_date,
-        order_type: "reservation"
-      });
+      inbound_quantity: nextInbound,
+      inbound_date: inboundDate || selectedOrder.inbound_date
+    });
 
     if (orderError) {
       setSaving(false);

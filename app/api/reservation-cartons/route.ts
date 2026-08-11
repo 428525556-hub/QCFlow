@@ -1,14 +1,14 @@
 import { apiSuccess } from "@/src/server/apiResponse";
 import { withApiHandler } from "@/src/server/apiHandler";
 import { ApiError, databaseError } from "@/src/server/errors";
-import { createRequestSupabaseClient, requireRequestUser } from "@/src/server/supabaseServer";
+import { createRequestSupabaseClient, requireStaffProfile } from "@/src/server/supabaseServer";
 import type { Database } from "@/src/types";
 
 type ReservationCartonInsert = Database["public"]["Tables"]["reservation_cartons"]["Insert"];
 type ReservationCartonItemInsert = Database["public"]["Tables"]["reservation_carton_items"]["Insert"];
 
 export const GET = withApiHandler(async (request) => {
-  await requireRequestUser(request);
+  await requireStaffProfile(request);
   const orderId = request.nextUrl.searchParams.get("orderId");
   if (!orderId) throw new ApiError("orderId is required", 400, "VALIDATION_ERROR");
 
@@ -24,7 +24,7 @@ export const GET = withApiHandler(async (request) => {
 });
 
 export const POST = withApiHandler(async (request) => {
-  const user = await requireRequestUser(request);
+  const { user } = await requireStaffProfile(request);
   const payload = (await request.json()) as {
     cartons: ReservationCartonInsert[];
     items: ReservationCartonItemInsert[];

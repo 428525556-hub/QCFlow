@@ -1,7 +1,7 @@
 import { apiSuccess } from "@/src/server/apiResponse";
 import { withApiHandler } from "@/src/server/apiHandler";
-import { databaseError } from "@/src/server/errors";
-import { createRequestSupabaseClient, requireRequestProfile, requireRequestUser } from "@/src/server/supabaseServer";
+import { ApiError, databaseError } from "@/src/server/errors";
+import { createRequestSupabaseClient, requireRequestProfile, requireStaffProfile } from "@/src/server/supabaseServer";
 import type { Database, InspectionPlan } from "@/src/types";
 
 type OrderInsert = Database["public"]["Tables"]["orders"]["Insert"];
@@ -12,12 +12,14 @@ export const GET = withApiHandler(async (request) => {
   const params = request.nextUrl.searchParams;
   let query = supabase.from("orders").select("*");
 
-  if (profile.role === "field_inspector") {
+  if (profile.role === "client") {
+    query = query.eq("customer_name", profile.customer_name ?? "").is("deleted_at", null);
+  } else if (profile.role === "field_inspector") {
     query = query.eq("customer_name", profile.customer_name ?? "").eq("inspection_plan", "field").is("deleted_at", null);
   } else if (params.get("includeDeleted") !== "true") {
     query = query.is("deleted_at", null);
   }
-  if (params.get("customerName")) query = query.eq("customer_name", params.get("customerName")!);
+  if (params.get("customerName") && profile.role !== "client") query = query.eq("customer_name", params.get("customerName")!);
   const inspectionPlan = params.get("inspectionPlan") as InspectionPlan | null;
   if (inspectionPlan && ["normal", "xray", "both", "field"].includes(inspectionPlan)) query = query.eq("inspection_plan", inspectionPlan);
 
@@ -27,7 +29,8 @@ export const GET = withApiHandler(async (request) => {
 });
 
 export const POST = withApiHandler(async (request) => {
-  const user = await requireRequestUser(request);
+  const { user } = await requireStaffProfile(request);
+  if (!user) throw new ApiError("Unauthorized", 401, "UNAUTHORIZED");
   const payload = (await request.json()) as OrderInsert;
   const supabase = createRequestSupabaseClient(request);
   const { data, error } = await supabase

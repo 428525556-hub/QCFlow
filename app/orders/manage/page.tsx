@@ -2,6 +2,8 @@
 
 import { StatusBadge } from "@/components/StatusBadge";
 import { useCurrentProfile, useCurrentUser } from "@/components/AuthGuard";
+import { ADMIN_EMAIL } from "@/lib/security";
+import { ORDER_STATUSES } from "@/src/constants";
 import type { InspectionPlan, Order, OrderItem, OrderStatus } from "@/lib/types";
 import { deleteOrder as deleteOrderById, deleteOrderItems, getOrdersWithItems, insertOrderItems, restoreOrder as restoreOrderById, softDeleteOrder, syncOrderItemIdentity, updateOrder, updateOrderItem } from "@/src/api/ordersApi";
 import { Archive, ChevronDown, ChevronRight, Plus, RotateCcw, Save, ShieldAlert, Trash2, Truck, Undo2 } from "lucide-react";
@@ -37,8 +39,6 @@ type EditableOrder = {
   deletedItemIds: string[];
 };
 
-const ADMIN_EMAIL = "shuoyuqc@163.com";
-const STATUS_OPTIONS = ["未开始", "检品中", "已完成"] as OrderStatus[];
 const PLAN_OPTIONS: { value: InspectionPlan; label: string }[] = [
   { value: "both", label: "检品 + X线" },
   { value: "normal", label: "只做检品" },
@@ -490,7 +490,7 @@ export default function ManageOrdersPage() {
                 <label className="text-sm font-bold text-slate-700">
                   订单状态
                   <select className="field mt-1" value={draft.status} onChange={(event) => patchDraft(order.id, { status: event.target.value as OrderStatus })}>
-                    {STATUS_OPTIONS.map((status) => (
+                    {ORDER_STATUSES.map((status) => (
                       <option key={status} value={status}>
                         {status}
                       </option>

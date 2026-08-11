@@ -1,4 +1,3 @@
-import { getShipmentCartons, getShipmentItems, getUnboxingRecords, insertShipmentCarton, insertShipmentItems, insertUnboxingRecord } from "@/src/api/shipmentApi";
 import { sortOrdersByShippingDate } from "@/src/services/orderService";
 import type { DispatchRecord, Order, OrderItem, ShipmentCarton, ShipmentItem } from "@/src/types";
 
@@ -141,14 +140,15 @@ export function buildDispatchTotals(items: OrderItem[], shipmentItems: ShipmentI
 export function buildDispatchDiffRows(items: OrderItem[], shipmentItems: ShipmentItem[]): DispatchDiffRow[] {
   const packedByItem = new Map<string, number>();
   for (const item of shipmentItems) {
-    const key = itemKey(item.color, item.size);
+    const key = `${item.po_number}|||${item.sku}|||${item.color}|||${item.size}`;
     packedByItem.set(key, (packedByItem.get(key) ?? 0) + Number(item.quantity || 0));
   }
 
   return items
     .map((item) => {
       const expected = Number(item.inbound_quantity || item.quantity || 0);
-      const packed = packedByItem.get(itemKey(item.color, item.size)) ?? 0;
+      const key = `${item.po_number}|||${item.sku}|||${item.color}|||${item.size}`;
+      const packed = packedByItem.get(key) ?? 0;
       return {
         po_number: item.po_number,
         sku: item.sku,
@@ -161,21 +161,3 @@ export function buildDispatchDiffRows(items: OrderItem[], shipmentItems: Shipmen
     })
     .filter((row) => row.shortage > 0);
 }
-
-export const shipmentService = {
-  getShipmentCartons,
-  getShipmentItems,
-  insertShipmentCarton,
-  insertShipmentItems,
-  getUnboxingRecords,
-  insertUnboxingRecord,
-  getAvailableQuantity,
-  getRemainingPackingQuantity,
-  buildPackingOrders,
-  groupPackingOrdersByCustomer,
-  buildDispatchOrders,
-  groupDispatchOrdersByCustomer,
-  isDispatchQuantityMatched,
-  buildDispatchTotals,
-  buildDispatchDiffRows
-};

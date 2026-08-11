@@ -1,7 +1,7 @@
 import { apiSuccess } from "@/src/server/apiResponse";
 import { withApiHandler } from "@/src/server/apiHandler";
 import { ApiError, databaseError } from "@/src/server/errors";
-import { createRequestSupabaseClient, requireRequestProfile } from "@/src/server/supabaseServer";
+import { createRequestSupabaseClient, requireRequestProfile, requireStaffProfile } from "@/src/server/supabaseServer";
 import type { Database } from "@/src/types";
 
 type ReinspectionInsert = Database["public"]["Tables"]["reinspection_records"]["Insert"];
@@ -35,10 +35,9 @@ export const GET = withApiHandler(async (request) => {
 });
 
 export const POST = withApiHandler(async (request) => {
-  const { user, profile } = await requireRequestProfile(request);
+  const { user } = await requireStaffProfile(request);
   const payload = (await request.json()) as ReinspectionInsert;
   const supabase = createRequestSupabaseClient(request);
-  if (profile.role === "field_inspector") throw new ApiError("Field inspector cannot create reinspection records", 403, "FORBIDDEN");
   const { data, error } = await supabase
     .from("reinspection_records")
     .insert({ ...payload, user_id: user.id })

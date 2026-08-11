@@ -2,7 +2,6 @@
 
 import { StatusBadge } from "@/components/StatusBadge";
 import { useLanguage } from "@/components/LanguageProvider";
-import { shortDate } from "@/lib/format";
 import { getOrdersProgressData, subscribeOrdersProgress } from "@/src/api/ordersApi";
 import { buildOrderProgressMap, getDefaultOrderProgress, groupOrdersByCustomer, type OrderProgress } from "@/src/services/orderService";
 import type { InspectionRecord, Order, ReinspectionRecord } from "@/lib/types";
@@ -111,7 +110,7 @@ export default function OrdersPage() {
               <h3 className="truncate text-lg font-black">{order.po_number}</h3>
               <StatusBadge status={order.status} />
             </div>
-            <p className="mt-1 text-sm text-slate-500">{t("inboundDate")}：{shortDate(order.created_at)}</p>
+            <p className="mt-1 text-sm text-slate-500">{t("inboundDate")}：{order.inbound_date ?? "未设置"}</p>
           </div>
           <div className="shrink-0 text-right">
             <p className="text-xs font-bold text-blue-700">{t("notInbound")}</p>

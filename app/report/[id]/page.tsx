@@ -10,22 +10,13 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
-const pdfLabels: Record<string, string> = {
-  "危害": "Hazard",
-  "帮面和附件": "Upper and accessories",
-  "中底和内里": "Insole and lining",
-  "大底/插跟/贴合": "Outsole and bonding",
-  "包装及表示不良": "Packing and labeling",
-  "检针/X光": "Needle/X-ray",
-  "常用补充": "Common"
-};
-
 export default function ReportPage() {
   const params = useParams<{ id: string }>();
   const orderId = params.id;
   const [order, setOrder] = useState<Order | null>(null);
   const [records, setRecords] = useState<InspectionRecord[]>([]);
   const [reinspections, setReinspections] = useState<ReinspectionRecord[]>([]);
+  const [message, setMessage] = useState("");
 
   useEffect(() => {
     async function load() {
@@ -42,108 +33,117 @@ export default function ReportPage() {
 
   async function downloadPdf() {
     if (!order) return;
-    const currentOrder = order;
-    const { jsPDF } = await import("jspdf");
-    const pdf = new jsPDF("portrait", "mm", "a4");
-    const template = await new Promise<HTMLImageElement>((resolve, reject) => {
-      const image = new Image();
-      image.onload = () => resolve(image);
-      image.onerror = reject;
-      image.src = "/qc-report-template.png";
-    });
-
-    const scaleX = template.naturalWidth / 595.44;
-    const scaleY = template.naturalHeight / 841.68;
-    const fontFamily = '"Microsoft YaHei", "Yu Gothic", "Meiryo", Arial, sans-serif';
-    const finalRows = report.finalRecordRows.filter((record) => record.finalQuantity > 0);
-    const rows = finalRows.length > 0 ? finalRows : report.finalRecordRows;
-    const rowsPerPage = 6;
-
-    function createPage() {
-      const canvas = document.createElement("canvas");
-      canvas.width = template.naturalWidth;
-      canvas.height = template.naturalHeight;
-      const context = canvas.getContext("2d");
-      if (!context) throw new Error("PDF canvas unavailable");
-      context.drawImage(template, 0, 0);
-      context.textBaseline = "middle";
-      return { canvas, context };
-    }
-
-    function px(pointX: number, pointY: number) {
-      return { x: pointX * scaleX, y: pointY * scaleY };
-    }
-
-    function write(context: CanvasRenderingContext2D, value: string | number, pointX: number, pointY: number, options?: { size?: number; bold?: boolean; align?: CanvasTextAlign; color?: string }) {
-      const position = px(pointX, pointY);
-      context.font = `${options?.bold ? 700 : 500} ${options?.size ?? 10}px ${fontFamily}`;
-      context.fillStyle = options?.color ?? "#000000";
-      context.textAlign = options?.align ?? "left";
-      context.fillText(String(value ?? ""), position.x, position.y);
-    }
-
-    function writeBox(context: CanvasRenderingContext2D, value: string | number, pointX: number, pointY: number, pointW: number, pointH: number, options?: { size?: number; bold?: boolean; align?: CanvasTextAlign; color?: string }) {
-      const position = px(pointX, pointY);
-      const width = pointW * scaleX;
-      const height = pointH * scaleY;
-      context.fillStyle = "rgba(255,255,255,0.92)";
-      context.fillRect(position.x + 1, position.y + 1, Math.max(1, width - 2), Math.max(1, height - 2));
-      context.font = `${options?.bold ? 700 : 500} ${options?.size ?? 10}px ${fontFamily}`;
-      context.fillStyle = options?.color ?? "#000000";
-      context.textAlign = options?.align ?? "center";
-      const text = String(value ?? "");
-      const x = options?.align === "left" ? position.x + 4 : options?.align === "right" ? position.x + width - 4 : position.x + width / 2;
-      context.fillText(text.length > 24 ? `${text.slice(0, 23)}…` : text, x, position.y + height / 2);
-    }
-
-    function addPage(canvas: HTMLCanvasElement, first: boolean) {
-      if (!first) pdf.addPage("a4", "portrait");
-      pdf.addImage(canvas.toDataURL("image/png"), "PNG", 0, 0, 210, 297);
-    }
-
-    const defectColumns = Array.from({ length: 52 }, (_, index) => 125.5 + index * 8.25);
-    const groupedQuantities = report.grouped.flatMap((group) => group.items.map((item) => item.quantity));
-    const pageCount = Math.max(1, Math.ceil(Math.max(rows.length, 1) / rowsPerPage));
-
-    for (let pageIndex = 0; pageIndex < pageCount; pageIndex += 1) {
-      const { canvas, context } = createPage();
-
-      writeBox(context, currentOrder.po_number, 83, 64.1, 28, 4.2, { size: 8, bold: true, align: "left" });
-      writeBox(context, currentOrder.customer_name, 83, 68.1, 28, 4.2, { size: 8, bold: true, align: "left" });
-      writeBox(context, "QCFlow", 83, 72.1, 28, 4.2, { size: 8, bold: true, align: "left" });
-      writeBox(context, currentOrder.factory_name, 119, 72.1, 30, 4.2, { size: 8, bold: true, align: "left" });
-      writeBox(context, currentOrder.inbound_date ?? "-", 160, 72.1, 34, 4.2, { size: 8, bold: true });
-      writeBox(context, new Date().toLocaleDateString(), 216, 72.1, 30, 4.2, { size: 8, bold: true });
-      writeBox(context, currentOrder.shipping_date ?? "-", 260, 72.1, 34, 4.2, { size: 8, bold: true });
-
-      groupedQuantities.slice(0, defectColumns.length).forEach((quantity, index) => {
-        if (quantity <= 0) return;
-        write(context, quantity, defectColumns[index], 230, { size: 8, bold: true, align: "center", color: "#b91c1c" });
+    setMessage("");
+    try {
+      const currentOrder = order;
+      const { jsPDF } = await import("jspdf");
+      const pdf = new jsPDF("portrait", "mm", "a4");
+      const template = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const image = new Image();
+        image.onload = () => resolve(image);
+        image.onerror = reject;
+        image.src = "/qc-report-template.png";
       });
 
-      const visibleRows = rows.slice(pageIndex * rowsPerPage, (pageIndex + 1) * rowsPerPage);
-      visibleRows.forEach((record, index) => {
-        const y = 225 + index * 6.3;
-        const stage = record.inspection_stage === "xray" ? "X線" : record.inspection_stage === "field" ? "出差検品" : "検品";
-        writeBox(context, `${stage} ${record.color || "-"} / ${record.size || "-"} ${record.defect_type} x${record.finalQuantity}`, 470, y, 67, 5.5, {
-          size: 6,
-          bold: true,
-          align: "left",
-          color: "#b91c1c"
+      const scaleX = template.naturalWidth / 595.44;
+      const scaleY = template.naturalHeight / 841.68;
+      const fontFamily = '"Microsoft YaHei", "Yu Gothic", "Meiryo", Arial, sans-serif';
+      const finalRows = report.finalRecordRows.filter((record) => record.finalQuantity > 0);
+      const rows = finalRows.length > 0 ? finalRows : report.finalRecordRows;
+      const rowsPerPage = 6;
+
+      function createPage() {
+        const canvas = document.createElement("canvas");
+        canvas.width = template.naturalWidth;
+        canvas.height = template.naturalHeight;
+        const context = canvas.getContext("2d");
+        if (!context) throw new Error("PDF canvas unavailable");
+        context.drawImage(template, 0, 0);
+        context.textBaseline = "middle";
+        return { canvas, context };
+      }
+
+      function px(pointX: number, pointY: number) {
+        return { x: pointX * scaleX, y: pointY * scaleY };
+      }
+
+      function write(context: CanvasRenderingContext2D, value: string | number, pointX: number, pointY: number, options?: { size?: number; bold?: boolean; align?: CanvasTextAlign; color?: string }) {
+        const position = px(pointX, pointY);
+        context.font = `${options?.bold ? 700 : 500} ${options?.size ?? 10}px ${fontFamily}`;
+        context.fillStyle = options?.color ?? "#000000";
+        context.textAlign = options?.align ?? "left";
+        context.fillText(String(value ?? ""), position.x, position.y);
+      }
+
+      function writeBox(context: CanvasRenderingContext2D, value: string | number, pointX: number, pointY: number, pointW: number, pointH: number, options?: { size?: number; bold?: boolean; align?: CanvasTextAlign; color?: string }) {
+        const position = px(pointX, pointY);
+        const width = pointW * scaleX;
+        const height = pointH * scaleY;
+        context.fillStyle = "rgba(255,255,255,0.92)";
+        context.fillRect(position.x + 1, position.y + 1, Math.max(1, width - 2), Math.max(1, height - 2));
+        context.font = `${options?.bold ? 700 : 500} ${options?.size ?? 10}px ${fontFamily}`;
+        context.fillStyle = options?.color ?? "#000000";
+        context.textAlign = options?.align ?? "center";
+        const text = String(value ?? "");
+        const x = options?.align === "left" ? position.x + 4 : options?.align === "right" ? position.x + width - 4 : position.x + width / 2;
+        context.fillText(text.length > 24 ? `${text.slice(0, 23)}…` : text, x, position.y + height / 2);
+      }
+
+      function addPage(canvas: HTMLCanvasElement, first: boolean) {
+        if (!first) pdf.addPage("a4", "portrait");
+        pdf.addImage(canvas.toDataURL("image/png"), "PNG", 0, 0, 210, 297);
+      }
+
+      const defectColumns = Array.from({ length: 52 }, (_, index) => 125.5 + index * 8.25);
+      const groupedQuantities = report.grouped.flatMap((group) => group.items.map((item) => item.quantity));
+      const pageCount = Math.max(1, Math.ceil(Math.max(rows.length, 1) / rowsPerPage));
+
+      for (let pageIndex = 0; pageIndex < pageCount; pageIndex += 1) {
+        const { canvas, context } = createPage();
+
+        writeBox(context, currentOrder.po_number, 83, 64.1, 28, 4.2, { size: 8, bold: true, align: "left" });
+        writeBox(context, currentOrder.customer_name, 83, 68.1, 28, 4.2, { size: 8, bold: true, align: "left" });
+        writeBox(context, "QCFlow", 83, 72.1, 28, 4.2, { size: 8, bold: true, align: "left" });
+        writeBox(context, currentOrder.factory_name, 119, 72.1, 30, 4.2, { size: 8, bold: true, align: "left" });
+        writeBox(context, currentOrder.inbound_date ?? "-", 160, 72.1, 34, 4.2, { size: 8, bold: true });
+        writeBox(context, new Date().toLocaleDateString(), 216, 72.1, 30, 4.2, { size: 8, bold: true });
+        writeBox(context, currentOrder.shipping_date ?? "-", 260, 72.1, 34, 4.2, { size: 8, bold: true });
+
+        groupedQuantities.slice(0, defectColumns.length).forEach((quantity, index) => {
+          if (quantity <= 0) return;
+          write(context, quantity, defectColumns[index], 230, { size: 8, bold: true, align: "center", color: "#b91c1c" });
         });
-      });
 
-      addPage(canvas, pageIndex === 0);
+        const visibleRows = rows.slice(pageIndex * rowsPerPage, (pageIndex + 1) * rowsPerPage);
+        visibleRows.forEach((record, index) => {
+          const y = 225 + index * 6.3;
+          const stage = record.inspection_stage === "xray" ? "X線" : record.inspection_stage === "field" ? "出差検品" : "検品";
+          writeBox(context, `${stage} ${record.color || "-"} / ${record.size || "-"} ${record.defect_type} x${record.finalQuantity}`, 470, y, 67, 5.5, {
+            size: 6,
+            bold: true,
+            align: "left",
+            color: "#b91c1c"
+          });
+        });
+
+        addPage(canvas, pageIndex === 0);
+      }
+
+      pdf.save(`検品検针報告書-${currentOrder.po_number}.pdf`);
+      setMessage("PDF 已生成。");
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "未知错误";
+      setMessage(`PDF 导出失败：${detail}。请确认 public/qc-report-template.png 存在。`);
     }
-
-    pdf.save(`検品検针報告書-${currentOrder.po_number}.pdf`);
   }
 
   async function downloadExcel() {
     if (!order) return;
-    const ExcelJS = (await import("exceljs")).default;
-    const workbook = new ExcelJS.Workbook();
-    const worksheet = workbook.addWorksheet("検品検針報告書");
+    setMessage("");
+    try {
+      const ExcelJS = (await import("exceljs")).default;
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet("検品検針報告書");
 
     const finalRows = report.finalRecordRows.filter((record) => record.finalQuantity > 0);
     const detailRows = finalRows.length > 0 ? finalRows : report.finalRecordRows;
@@ -321,16 +321,21 @@ export default function ReportPage() {
       worksheet.getColumn(column).width = width;
     }
 
-    const buffer = await workbook.xlsx.writeBuffer();
-    const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `検品検針報告書-${order.po_number || "report"}.xlsx`;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    URL.revokeObjectURL(url);
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `検品検針報告書-${order.po_number || "report"}.xlsx`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      setMessage("Excel 已生成。");
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "未知错误";
+      setMessage(`Excel 导出失败：${detail}`);
+    }
   }
 
   if (!order) {
@@ -544,6 +549,7 @@ export default function ReportPage() {
       </section>
 
       <div className="sticky bottom-16 grid grid-cols-4 gap-3 rounded border border-line bg-white p-3 shadow-panel md:bottom-4">
+        {message && <p className="col-span-4 rounded bg-blue-50 px-3 py-2 text-sm font-bold text-blue-800">{message}</p>}
         <Link href={`/inspect/${orderId}`} className="secondary-btn">
           检品
         </Link>

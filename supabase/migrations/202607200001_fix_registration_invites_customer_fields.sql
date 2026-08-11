@@ -6,7 +6,7 @@ alter table public.registration_invites
   drop constraint if exists registration_invites_role_check;
 
 alter table public.registration_invites
-  add constraint registration_invites_role_check check (role in ('staff', 'client'));
+  add constraint registration_invites_role_check check (role in ('staff', 'client', 'field_inspector'));
 
 alter table public.registration_invites
   add column if not exists used_by_email text,

@@ -1,7 +1,8 @@
 import { apiSuccess } from "@/src/server/apiResponse";
 import { withApiHandler } from "@/src/server/apiHandler";
 import { ApiError, databaseError } from "@/src/server/errors";
-import { createRequestSupabaseClient, requireRequestProfile, requireRequestUser } from "@/src/server/supabaseServer";
+import { createRequestSupabaseClient, requireRequestProfile } from "@/src/server/supabaseServer";
+import { ADMIN_EMAIL } from "@/lib/security";
 import type { Database, InspectionStage } from "@/src/types";
 
 type InspectionInsert = Database["public"]["Tables"]["inspection_records"]["Insert"];
@@ -43,6 +44,7 @@ export const POST = withApiHandler(async (request) => {
   const payload = (await request.json()) as InspectionInsert;
   const supabase = createRequestSupabaseClient(request);
 
+  if (profile.role === "client") throw new ApiError("Client accounts cannot create inspection records", 403, "FORBIDDEN");
   if (payload.inspection_stage === "field" || profile.role === "field_inspector") {
     if (profile.role === "field_inspector" && payload.inspection_stage !== "field") throw new ApiError("Field inspector can only create field inspection records", 403, "FORBIDDEN");
     const { data: order, error: orderError } = await supabase.from("orders").select("customer_name, inspection_plan").eq("id", payload.order_id).single();
@@ -62,11 +64,18 @@ export const POST = withApiHandler(async (request) => {
 });
 
 export const DELETE = withApiHandler(async (request) => {
-  await requireRequestUser(request);
+  const { user, profile } = await requireRequestProfile(request);
   const id = request.nextUrl.searchParams.get("id");
   if (!id) throw new ApiError("id is required", 400, "VALIDATION_ERROR");
 
   const supabase = createRequestSupabaseClient(request);
+  const { data: existing, error: existingError } = await supabase.from("inspection_records").select("user_id").eq("id", id).maybeSingle();
+  if (existingError) throw databaseError(existingError);
+  if (!existing) throw new ApiError("Inspection record not found", 404, "NOT_FOUND");
+  if (existing.user_id !== user.id && profile.role !== "admin" && user.email !== ADMIN_EMAIL) {
+    throw new ApiError("You can only delete your own inspection records", 403, "FORBIDDEN");
+  }
+
   const { data, error } = await supabase.from("inspection_records").delete().eq("id", id).select("id").single();
 
   if (error) throw databaseError(error);

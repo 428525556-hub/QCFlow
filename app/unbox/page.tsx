@@ -1,13 +1,14 @@
 "use client";
 
 import { useCurrentUser } from "@/components/AuthGuard";
+import { PhotoPicker } from "@/components/PhotoPicker";
 import { findMissingCartonNos, sortByCartonNo } from "@/lib/cartonNumbers";
 import { shortDate } from "@/lib/format";
 import { getActiveOrders, getOrderItems } from "@/src/api/ordersApi";
 import { getRecentUnboxingRecords, getReservationCartonPlan, getUnboxingPhotoPublicUrl, getUnboxingRecords, insertUnboxingRecord, insertUnboxingRecords, uploadUnboxingPhoto } from "@/src/api/shipmentApi";
 import { compressImageFile, createSafeId, formatMb } from "@/src/utils";
 import type { Order, OrderItem, ReservationCarton, ReservationCartonItem, UnboxingRecord } from "@/lib/types";
-import { AlertTriangle, Camera, CheckSquare, PackageOpen, Save, X } from "lucide-react";
+import { AlertTriangle, CheckSquare, PackageOpen, Save, X } from "lucide-react";
 import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 
 export default function UnboxPage() {
@@ -542,18 +543,7 @@ export default function UnboxPage() {
 
         <div>
           <p className="label">少鞋照片</p>
-          <label className="mt-2 flex min-h-32 cursor-pointer flex-col items-center justify-center rounded border-2 border-dashed border-line bg-blue-50 p-3 text-center">
-            {preview ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={preview} alt="少鞋照片" className="max-h-56 rounded object-contain" />
-            ) : (
-              <>
-                <Camera size={28} className="text-blue-500" />
-                <span className="mt-2 text-sm font-bold text-slate-600">少鞋时拍照上传</span>
-              </>
-            )}
-            <input type="file" accept="image/*" capture="environment" className="sr-only" onChange={pickPhoto} />
-          </label>
+          <PhotoPicker preview={preview} hint="少鞋时拍照上传" onPick={pickPhoto} />
         </div>
 
         {message && <p className="rounded bg-blue-50 px-3 py-2 text-sm font-bold text-blue-800">{message}</p>}

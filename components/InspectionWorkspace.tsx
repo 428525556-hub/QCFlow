@@ -1,11 +1,13 @@
 "use client";
 
 import { useCurrentUser } from "@/components/AuthGuard";
+import { PhotoPicker } from "@/components/PhotoPicker";
 import { StatusBadge } from "@/components/StatusBadge";
 import { shortDate } from "@/lib/format";
 import { deleteInspectionRecord, getInspectionPhotoPublicUrl, getInspectionWorkspaceData, insertInspectionRecord, uploadInspectionPhoto } from "@/src/api/inspectionApi";
 import { insertOrderAttachments, uploadOrderAttachmentFile } from "@/src/api/orderAttachmentsApi";
 import { updateOrder } from "@/src/api/ordersApi";
+import { ADMIN_EMAIL } from "@/lib/security";
 import { compressImageFile, createSafeId, formatMb, safeFileName, withTimeout } from "@/src/utils";
 import type { DefectGroup, InspectionRecord, InspectionStage, Order, OrderAttachment, OrderItem } from "@/lib/types";
 import { Camera, CheckCircle2, ExternalLink, FileSpreadsheet, FileText, Minus, Plus, Save, Trash2, Upload } from "lucide-react";
@@ -391,18 +393,7 @@ export function InspectionWorkspace({ orderId, stage, title, subtitle, groups }:
       <form onSubmit={submit} className="inspection-form panel space-y-4 p-4">
         <div className="inspection-photo-panel">
           <label className="label">现场照片</label>
-          <label className="mt-2 flex min-h-32 cursor-pointer flex-col items-center justify-center rounded border-2 border-dashed border-line bg-blue-50 p-3 text-center">
-            {preview ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={preview} alt="检品照片预览" className="max-h-56 rounded object-contain" />
-            ) : (
-              <>
-                <Camera size={30} className="text-blue-500" />
-                <span className="mt-2 text-sm font-bold text-slate-600">拍照或选择图片</span>
-              </>
-            )}
-            <input type="file" accept="image/*" capture="environment" className="sr-only" onChange={pickPhoto} />
-          </label>
+          <PhotoPicker preview={preview} hint="拍照或选择图片" onPick={pickPhoto} />
         </div>
 
         <div className="inspection-defect-panel">
@@ -531,7 +522,7 @@ export function InspectionWorkspace({ orderId, stage, title, subtitle, groups }:
                   <p className="font-black">{record.defect_type}</p>
                   <div className="flex shrink-0 items-center gap-2">
                     <p className="font-black text-machine">x {record.quantity}</p>
-                    {stage === "xray" && (
+                    {stage === "xray" && (record.user_id === user?.id || user?.email === ADMIN_EMAIL) && (
                       <button
                         type="button"
                         onClick={() => removeRecord(record)}

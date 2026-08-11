@@ -3,7 +3,18 @@ import type { NextRequest } from "next/server";
 
 import { publicEnv } from "@/src/config/env";
 import { ApiError } from "@/src/server/errors";
+import { ADMIN_EMAIL } from "@/lib/security";
 import type { Database, UserProfile } from "@/src/types";
+
+export function isStaffRole(profile: Pick<UserProfile, "role">) {
+  return profile.role === "admin" || profile.role === "staff";
+}
+
+export async function requireStaffProfile(request: NextRequest) {
+  const result = await requireRequestProfile(request);
+  if (!isStaffRole(result.profile)) throw new ApiError("Forbidden", 403, "FORBIDDEN");
+  return result;
+}
 
 export function getBearerToken(request: NextRequest) {
   const authorization = request.headers.get("authorization");
@@ -46,7 +57,7 @@ export async function requireRequestProfile(request: NextRequest) {
   if (error) throw new ApiError(error.message, 400, error.code ?? "PROFILE_ERROR", error.details);
   if (data) return { user, profile: data as UserProfile };
 
-  const role = user.email === "shuoyuqc@163.com" ? "admin" : user.user_metadata?.role === "client" ? "client" : user.user_metadata?.role === "field_inspector" ? "field_inspector" : "staff";
+  const role = user.email === ADMIN_EMAIL ? "admin" : user.user_metadata?.role === "client" ? "client" : user.user_metadata?.role === "field_inspector" ? "field_inspector" : "staff";
   return {
     user,
     profile: {

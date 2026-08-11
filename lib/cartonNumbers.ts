@@ -11,7 +11,7 @@ type ParsedCartonNo = {
   suffix: string;
 };
 
-function parseCartonNo(value: string): ParsedCartonNo {
+export function parseCartonNo(value: string): ParsedCartonNo {
   const raw = value.trim();
   const match = raw.match(/^(.*?)(\d+)(\D*)$/);
   if (!match) return { raw, prefix: raw, number: null, width: 0, suffix: "" };

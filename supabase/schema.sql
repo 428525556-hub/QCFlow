@@ -212,137 +212,394 @@ drop policy if exists "users can view inspection photos" on storage.objects;
 drop policy if exists "users can upload order attachments" on storage.objects;
 drop policy if exists "users can view order attachments" on storage.objects;
 
+-- ============ orders ============
+drop policy if exists "users can read own orders" on public.orders;
 create policy "users can read own orders"
 on public.orders for select
-using (auth.uid() = user_id);
+using (
+  auth.uid() = user_id
+  or (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
+  or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role in ('admin', 'staff'))
+  or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role = 'client' and p.customer_name = orders.customer_name)
+  or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role = 'field_inspector' and p.customer_name = orders.customer_name and orders.inspection_plan = 'field')
+);
 
+drop policy if exists "users can insert own orders" on public.orders;
 create policy "users can insert own orders"
 on public.orders for insert
-with check (auth.uid() = user_id);
+with check (
+  auth.uid() = user_id
+  and (
+    (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
+    or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role in ('admin', 'staff'))
+  )
+);
 
+drop policy if exists "users can update own orders" on public.orders;
 create policy "users can update own orders"
 on public.orders for update
-using (auth.uid() = user_id)
-with check (auth.uid() = user_id);
+using (
+  (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
+  or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role in ('admin', 'staff'))
+)
+with check (
+  (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
+  or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role in ('admin', 'staff'))
+);
 
+drop policy if exists "users can delete own orders" on public.orders;
 create policy "users can delete own orders"
 on public.orders for delete
-using (auth.uid() = user_id);
+using (
+  (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
+  or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role in ('admin', 'staff'))
+);
 
+-- ============ order_items ============
+drop policy if exists "users can read own order items" on public.order_items;
 create policy "users can read own order items"
 on public.order_items for select
-using (auth.uid() = user_id);
+using (
+  auth.uid() = user_id
+  or (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
+  or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role in ('admin', 'staff'))
+  or exists (
+    select 1 from public.orders o
+    join public.user_profiles p on p.id = auth.uid()
+    where o.id = order_items.order_id and p.role = 'client' and p.customer_name = o.customer_name
+  )
+  or exists (
+    select 1 from public.orders o
+    join public.user_profiles p on p.id = auth.uid()
+    where o.id = order_items.order_id and p.role = 'field_inspector' and p.customer_name = o.customer_name and o.inspection_plan = 'field'
+  )
+);
 
+drop policy if exists "users can insert own order items" on public.order_items;
 create policy "users can insert own order items"
 on public.order_items for insert
-with check (auth.uid() = user_id);
+with check (
+  auth.uid() = user_id
+  and (
+    (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
+    or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role in ('admin', 'staff'))
+  )
+);
 
+drop policy if exists "users can update own order items" on public.order_items;
 create policy "users can update own order items"
 on public.order_items for update
-using (auth.uid() = user_id)
-with check (auth.uid() = user_id);
+using (
+  (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
+  or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role in ('admin', 'staff'))
+)
+with check (
+  (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
+  or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role in ('admin', 'staff'))
+);
 
+drop policy if exists "users can delete own order items" on public.order_items;
+create policy "users can delete own order items"
+on public.order_items for delete
+using (
+  (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
+  or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role in ('admin', 'staff'))
+);
+
+-- ============ reservation_cartons ============
+drop policy if exists "users can read own reservation cartons" on public.reservation_cartons;
 create policy "users can read own reservation cartons"
 on public.reservation_cartons for select
-using (auth.uid() = user_id);
+using (
+  auth.uid() = user_id
+  or (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
+  or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role in ('admin', 'staff'))
+  or exists (
+    select 1 from public.orders o
+    join public.user_profiles p on p.id = auth.uid()
+    where o.id = reservation_cartons.order_id and p.role = 'client' and p.customer_name = o.customer_name
+  )
+  or exists (
+    select 1 from public.orders o
+    join public.user_profiles p on p.id = auth.uid()
+    where o.id = reservation_cartons.order_id and p.role = 'field_inspector' and p.customer_name = o.customer_name and o.inspection_plan = 'field'
+  )
+);
 
+drop policy if exists "users can insert own reservation cartons" on public.reservation_cartons;
 create policy "users can insert own reservation cartons"
 on public.reservation_cartons for insert
-with check (auth.uid() = user_id);
+with check (
+  auth.uid() = user_id
+  and (
+    (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
+    or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role in ('admin', 'staff'))
+  )
+);
 
+drop policy if exists "users can update own reservation cartons" on public.reservation_cartons;
 create policy "users can update own reservation cartons"
 on public.reservation_cartons for update
-using (auth.uid() = user_id)
-with check (auth.uid() = user_id);
+using (
+  (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
+  or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role in ('admin', 'staff'))
+)
+with check (
+  (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
+  or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role in ('admin', 'staff'))
+);
 
+drop policy if exists "users can delete own reservation cartons" on public.reservation_cartons;
 create policy "users can delete own reservation cartons"
 on public.reservation_cartons for delete
-using (auth.uid() = user_id);
+using (
+  (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
+  or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role in ('admin', 'staff'))
+);
 
+-- ============ reservation_carton_items ============
+drop policy if exists "users can read own reservation carton items" on public.reservation_carton_items;
 create policy "users can read own reservation carton items"
 on public.reservation_carton_items for select
-using (auth.uid() = user_id);
+using (
+  auth.uid() = user_id
+  or (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
+  or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role in ('admin', 'staff'))
+  or exists (
+    select 1 from public.orders o
+    join public.user_profiles p on p.id = auth.uid()
+    where o.id = reservation_carton_items.order_id and p.role = 'client' and p.customer_name = o.customer_name
+  )
+  or exists (
+    select 1 from public.orders o
+    join public.user_profiles p on p.id = auth.uid()
+    where o.id = reservation_carton_items.order_id and p.role = 'field_inspector' and p.customer_name = o.customer_name and o.inspection_plan = 'field'
+  )
+);
 
+drop policy if exists "users can insert own reservation carton items" on public.reservation_carton_items;
 create policy "users can insert own reservation carton items"
 on public.reservation_carton_items for insert
-with check (auth.uid() = user_id);
+with check (
+  auth.uid() = user_id
+  and (
+    (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
+    or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role in ('admin', 'staff'))
+  )
+);
 
+drop policy if exists "users can update own reservation carton items" on public.reservation_carton_items;
 create policy "users can update own reservation carton items"
 on public.reservation_carton_items for update
-using (auth.uid() = user_id)
-with check (auth.uid() = user_id);
+using (
+  (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
+  or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role in ('admin', 'staff'))
+)
+with check (
+  (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
+  or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role in ('admin', 'staff'))
+);
 
+drop policy if exists "users can delete own reservation carton items" on public.reservation_carton_items;
 create policy "users can delete own reservation carton items"
 on public.reservation_carton_items for delete
-using (auth.uid() = user_id);
+using (
+  (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
+  or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role in ('admin', 'staff'))
+);
 
+-- ============ order_attachments ============
 drop policy if exists "users can read own order attachments" on public.order_attachments;
 create policy "users can read own order attachments"
 on public.order_attachments for select
-using (auth.uid() = user_id);
+using (
+  auth.uid() = user_id
+  or (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
+  or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role in ('admin', 'staff'))
+  or exists (
+    select 1 from public.orders o
+    join public.user_profiles p on p.id = auth.uid()
+    where o.id = order_attachments.order_id and p.role = 'client' and p.customer_name = o.customer_name
+  )
+  or exists (
+    select 1 from public.orders o
+    join public.user_profiles p on p.id = auth.uid()
+    where o.id = order_attachments.order_id and p.role = 'field_inspector' and p.customer_name = o.customer_name and o.inspection_plan = 'field'
+  )
+);
 
 drop policy if exists "users can insert own order attachments" on public.order_attachments;
 create policy "users can insert own order attachments"
 on public.order_attachments for insert
-with check (auth.uid() = user_id);
+with check (
+  auth.uid() = user_id
+  and (
+    (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
+    or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role in ('admin', 'staff'))
+  )
+);
 
 drop policy if exists "users can update own order attachments" on public.order_attachments;
 create policy "users can update own order attachments"
 on public.order_attachments for update
-using (auth.uid() = user_id)
-with check (auth.uid() = user_id);
+using (
+  (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
+  or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role in ('admin', 'staff'))
+)
+with check (
+  (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
+  or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role in ('admin', 'staff'))
+);
 
+drop policy if exists "users can delete own order attachments" on public.order_attachments;
+create policy "users can delete own order attachments"
+on public.order_attachments for delete
+using (
+  (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
+  or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role in ('admin', 'staff'))
+);
+
+-- ============ shipment_cartons ============
+drop policy if exists "users can read own shipment cartons" on public.shipment_cartons;
 create policy "users can read own shipment cartons"
 on public.shipment_cartons for select
-using (auth.uid() = user_id);
+using (
+  auth.uid() = user_id
+  or (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
+  or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role in ('admin', 'staff'))
+);
 
+drop policy if exists "users can insert own shipment cartons" on public.shipment_cartons;
 create policy "users can insert own shipment cartons"
 on public.shipment_cartons for insert
-with check (auth.uid() = user_id);
+with check (
+  auth.uid() = user_id
+  and (
+    (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
+    or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role in ('admin', 'staff'))
+  )
+);
 
+drop policy if exists "users can update own shipment cartons" on public.shipment_cartons;
 create policy "users can update own shipment cartons"
 on public.shipment_cartons for update
-using (auth.uid() = user_id)
-with check (auth.uid() = user_id);
+using (
+  (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
+  or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role in ('admin', 'staff'))
+)
+with check (
+  (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
+  or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role in ('admin', 'staff'))
+);
 
+drop policy if exists "users can delete own shipment cartons" on public.shipment_cartons;
 create policy "users can delete own shipment cartons"
 on public.shipment_cartons for delete
-using (auth.uid() = user_id);
+using (
+  (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
+  or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role in ('admin', 'staff'))
+);
 
+-- ============ shipment_items ============
+drop policy if exists "users can read own shipment items" on public.shipment_items;
 create policy "users can read own shipment items"
 on public.shipment_items for select
-using (auth.uid() = user_id);
+using (
+  auth.uid() = user_id
+  or (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
+  or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role in ('admin', 'staff'))
+);
 
+drop policy if exists "users can insert own shipment items" on public.shipment_items;
 create policy "users can insert own shipment items"
 on public.shipment_items for insert
-with check (auth.uid() = user_id);
+with check (
+  auth.uid() = user_id
+  and (
+    (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
+    or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role in ('admin', 'staff'))
+  )
+);
 
+drop policy if exists "users can update own shipment items" on public.shipment_items;
 create policy "users can update own shipment items"
 on public.shipment_items for update
-using (auth.uid() = user_id)
-with check (auth.uid() = user_id);
+using (
+  (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
+  or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role in ('admin', 'staff'))
+)
+with check (
+  (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
+  or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role in ('admin', 'staff'))
+);
 
+drop policy if exists "users can delete own shipment items" on public.shipment_items;
 create policy "users can delete own shipment items"
 on public.shipment_items for delete
-using (auth.uid() = user_id);
+using (
+  (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
+  or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role in ('admin', 'staff'))
+);
 
+-- ============ inspection_records ============
+drop policy if exists "users can read own records" on public.inspection_records;
 create policy "users can read own records"
 on public.inspection_records for select
-using (auth.uid() = user_id);
+using (
+  auth.uid() = user_id
+  or (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
+  or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role in ('admin', 'staff'))
+  or exists (
+    select 1 from public.orders o
+    join public.user_profiles p on p.id = auth.uid()
+    where o.id = inspection_records.order_id and p.role = 'client' and p.customer_name = o.customer_name
+  )
+  or exists (
+    select 1 from public.orders o
+    join public.user_profiles p on p.id = auth.uid()
+    where o.id = inspection_records.order_id and p.role = 'field_inspector' and p.customer_name = o.customer_name and o.inspection_plan = 'field' and inspection_records.inspection_stage = 'field'
+  )
+);
 
+drop policy if exists "users can insert own records" on public.inspection_records;
 create policy "users can insert own records"
 on public.inspection_records for insert
-with check (auth.uid() = user_id);
+with check (
+  auth.uid() = user_id
+  and (
+    (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
+    or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role in ('admin', 'staff'))
+    or exists (
+      select 1 from public.orders o
+      join public.user_profiles p on p.id = auth.uid()
+      where o.id = inspection_records.order_id and p.role = 'field_inspector' and p.customer_name = o.customer_name and o.inspection_plan = 'field' and inspection_records.inspection_stage = 'field'
+    )
+  )
+);
 
+drop policy if exists "users can update own records" on public.inspection_records;
 create policy "users can update own records"
 on public.inspection_records for update
-using (auth.uid() = user_id)
-with check (auth.uid() = user_id);
+using (
+  (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
+  or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role in ('admin', 'staff'))
+)
+with check (
+  (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
+  or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role in ('admin', 'staff'))
+);
 
+drop policy if exists "users can delete own records" on public.inspection_records;
 create policy "users can delete own records"
 on public.inspection_records for delete
-using (auth.uid() = user_id);
+using (
+  auth.uid() = user_id
+  or (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
+  or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role = 'admin')
+);
 
+-- ============ registration_invites ============
+drop policy if exists "admin can read invites and visitors can validate active invites" on public.registration_invites;
 create policy "admin can read invites and visitors can validate active invites"
 on public.registration_invites for select
 using (
@@ -350,10 +607,12 @@ using (
   or (active = true and used_at is null and expires_at > now())
 );
 
+drop policy if exists "admin can insert invites" on public.registration_invites;
 create policy "admin can insert invites"
 on public.registration_invites for insert
 with check ((auth.jwt() ->> 'email') = 'shuoyuqc@163.com');
 
+drop policy if exists "admin can update invites and visitors can consume invites" on public.registration_invites;
 create policy "admin can update invites and visitors can consume invites"
 on public.registration_invites for update
 using (
@@ -365,26 +624,23 @@ with check (
   or used_at is not null
 );
 
-insert into storage.buckets (id, name, public)
-values ('inspection-photos', 'inspection-photos', true)
-on conflict (id) do nothing;
-
-insert into storage.buckets (id, name, public)
-values ('order-attachments', 'order-attachments', true)
-on conflict (id) do nothing;
-
+-- ============ storage.objects ============
+drop policy if exists "users can upload inspection photos" on storage.objects;
 create policy "users can upload inspection photos"
 on storage.objects for insert
 with check (bucket_id = 'inspection-photos' and auth.uid()::text = (storage.foldername(name))[1]);
 
+drop policy if exists "users can view inspection photos" on storage.objects;
 create policy "users can view inspection photos"
 on storage.objects for select
 using (bucket_id = 'inspection-photos');
 
+drop policy if exists "users can upload order attachments" on storage.objects;
 create policy "users can upload order attachments"
 on storage.objects for insert
 with check (bucket_id = 'order-attachments' and auth.uid()::text = (storage.foldername(name))[1]);
 
+drop policy if exists "users can view order attachments" on storage.objects;
 create policy "users can view order attachments"
 on storage.objects for select
 using (bucket_id = 'order-attachments');
@@ -421,127 +677,6 @@ create policy "users can update own profile and admin can update profiles"
 on public.user_profiles for update
 using (auth.uid() = id or (auth.jwt() ->> 'email') = 'shuoyuqc@163.com')
 with check (auth.uid() = id or (auth.jwt() ->> 'email') = 'shuoyuqc@163.com');
-
-drop policy if exists "users can read own orders" on public.orders;
-create policy "users can read own orders"
-on public.orders for select
-using (
-  auth.uid() = user_id
-  or (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
-  or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role in ('admin', 'staff'))
-  or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role = 'client' and p.customer_name = orders.customer_name)
-  or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role = 'field_inspector' and p.customer_name = orders.customer_name and orders.inspection_plan = 'field')
-);
-
-drop policy if exists "users can insert own orders" on public.orders;
-create policy "users can insert own orders"
-on public.orders for insert
-with check (
-  auth.uid() = user_id
-  and ((auth.jwt() ->> 'email') = 'shuoyuqc@163.com' or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role in ('admin', 'staff')))
-);
-
-drop policy if exists "users can update own orders" on public.orders;
-create policy "users can update own orders"
-on public.orders for update
-using (
-  auth.uid() = user_id
-  and ((auth.jwt() ->> 'email') = 'shuoyuqc@163.com' or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role in ('admin', 'staff')))
-)
-with check (
-  auth.uid() = user_id
-  and ((auth.jwt() ->> 'email') = 'shuoyuqc@163.com' or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role in ('admin', 'staff')))
-);
-
-drop policy if exists "users can delete own orders" on public.orders;
-create policy "users can delete own orders"
-on public.orders for delete
-using (
-  auth.uid() = user_id
-  and ((auth.jwt() ->> 'email') = 'shuoyuqc@163.com' or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role in ('admin', 'staff')))
-);
-
-drop policy if exists "users can read own order items" on public.order_items;
-create policy "users can read own order items"
-on public.order_items for select
-using (
-  auth.uid() = user_id
-  or (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
-  or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role in ('admin', 'staff'))
-  or exists (
-    select 1 from public.orders o
-    join public.user_profiles p on p.id = auth.uid()
-    where o.id = order_items.order_id and p.role = 'client' and p.customer_name = o.customer_name
-  )
-  or exists (
-    select 1 from public.orders o
-    join public.user_profiles p on p.id = auth.uid()
-    where o.id = order_items.order_id and p.role = 'field_inspector' and p.customer_name = o.customer_name and o.inspection_plan = 'field'
-  )
-);
-
-drop policy if exists "users can read own records" on public.inspection_records;
-create policy "users can read own records"
-on public.inspection_records for select
-using (
-  auth.uid() = user_id
-  or (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
-  or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role in ('admin', 'staff'))
-  or exists (
-    select 1 from public.orders o
-    join public.user_profiles p on p.id = auth.uid()
-    where o.id = inspection_records.order_id and p.role = 'client' and p.customer_name = o.customer_name
-  )
-  or exists (
-    select 1 from public.orders o
-    join public.user_profiles p on p.id = auth.uid()
-    where o.id = inspection_records.order_id and p.role = 'field_inspector' and p.customer_name = o.customer_name and o.inspection_plan = 'field' and inspection_records.inspection_stage = 'field'
-  )
-);
-
-drop policy if exists "users can insert own records" on public.inspection_records;
-create policy "users can insert own records"
-on public.inspection_records for insert
-with check (
-  auth.uid() = user_id
-  and (
-    (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
-    or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role in ('admin', 'staff'))
-    or exists (
-      select 1 from public.orders o
-      join public.user_profiles p on p.id = auth.uid()
-      where o.id = inspection_records.order_id and p.role = 'field_inspector' and p.customer_name = o.customer_name and o.inspection_plan = 'field' and inspection_records.inspection_stage = 'field'
-    )
-  )
-);
-
-drop policy if exists "users can delete own records" on public.inspection_records;
-create policy "users can delete own records"
-on public.inspection_records for delete
-using (
-  auth.uid() = user_id
-  or (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
-  or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role in ('admin', 'staff'))
-);
-
-drop policy if exists "users can read own order attachments" on public.order_attachments;
-create policy "users can read own order attachments"
-on public.order_attachments for select
-using (
-  auth.uid() = user_id
-  or (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
-  or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role in ('admin', 'staff'))
-  or exists (
-    select 1 from public.orders o
-    join public.user_profiles p on p.id = auth.uid()
-    where o.id = order_attachments.order_id and p.role = 'client' and p.customer_name = o.customer_name
-  )
-  or exists (
-    select 1 from public.orders o
-    join public.user_profiles p on p.id = auth.uid()
-    where o.id = order_attachments.order_id and p.role = 'field_inspector' and p.customer_name = o.customer_name and o.inspection_plan = 'field'
-  )
-);
 
 -- Defect color and size tracking
 alter table public.inspection_records add column if not exists color text;
@@ -625,11 +760,8 @@ alter table public.reinspection_records drop constraint if exists reinspection_r
 alter table public.reinspection_records add constraint reinspection_records_inspection_stage_check check (inspection_stage in ('normal', 'xray', 'field'));
 alter table public.reinspection_records enable row level security;
 
+-- ============ reinspection_records ============
 drop policy if exists "users can read reinspection records" on public.reinspection_records;
-drop policy if exists "users can insert reinspection records" on public.reinspection_records;
-drop policy if exists "users can update reinspection records" on public.reinspection_records;
-drop policy if exists "users can delete reinspection records" on public.reinspection_records;
-
 create policy "users can read reinspection records"
 on public.reinspection_records for select
 using (
@@ -648,29 +780,35 @@ using (
   )
 );
 
+drop policy if exists "users can insert reinspection records" on public.reinspection_records;
 create policy "users can insert reinspection records"
 on public.reinspection_records for insert
 with check (
   auth.uid() = user_id
-  and ((auth.jwt() ->> 'email') = 'shuoyuqc@163.com' or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role in ('admin', 'staff')))
+  and (
+    (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
+    or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role in ('admin', 'staff'))
+  )
 );
 
+drop policy if exists "users can update reinspection records" on public.reinspection_records;
 create policy "users can update reinspection records"
 on public.reinspection_records for update
 using (
-  auth.uid() = user_id
-  and ((auth.jwt() ->> 'email') = 'shuoyuqc@163.com' or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role in ('admin', 'staff')))
+  (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
+  or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role in ('admin', 'staff'))
 )
 with check (
-  auth.uid() = user_id
-  and ((auth.jwt() ->> 'email') = 'shuoyuqc@163.com' or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role in ('admin', 'staff')))
+  (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
+  or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role in ('admin', 'staff'))
 );
 
+drop policy if exists "users can delete reinspection records" on public.reinspection_records;
 create policy "users can delete reinspection records"
 on public.reinspection_records for delete
 using (
-  auth.uid() = user_id
-  and ((auth.jwt() ->> 'email') = 'shuoyuqc@163.com' or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role in ('admin', 'staff')))
+  (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
+  or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role in ('admin', 'staff'))
 );
 
 -- Final dispatch records for truck/container handover

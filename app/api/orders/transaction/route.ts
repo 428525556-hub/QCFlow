@@ -1,14 +1,14 @@
 import { apiSuccess } from "@/src/server/apiResponse";
 import { withApiHandler } from "@/src/server/apiHandler";
 import { ApiError, databaseError } from "@/src/server/errors";
-import { createRequestSupabaseClient, requireRequestUser } from "@/src/server/supabaseServer";
+import { createRequestSupabaseClient, requireStaffProfile } from "@/src/server/supabaseServer";
 import type { Database, Json } from "@/src/types";
 
 type OrderInsert = Database["public"]["Tables"]["orders"]["Insert"];
 type OrderItemInsert = Omit<Database["public"]["Tables"]["order_items"]["Insert"], "order_id">;
 
 export const POST = withApiHandler(async (request) => {
-  await requireRequestUser(request);
+  await requireStaffProfile(request);
   const payload = (await request.json()) as { order: OrderInsert; items: OrderItemInsert[] };
   if (!payload.order || !Array.isArray(payload.items) || payload.items.length === 0) {
     throw new ApiError("order and at least one item are required", 400, "VALIDATION_ERROR");

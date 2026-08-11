@@ -1,6 +1,6 @@
 import { percent } from "@/lib/format";
 import { normalDefectGroups, xrayDefectGroups } from "@/lib/types";
-import type { InspectionRecord, Order, ReinspectionRecord } from "@/src/types";
+import type { DefectGroup, InspectionRecord, InspectionStage, Order, ReinspectionRecord } from "@/src/types";
 
 export type FinalInspectionRecord = InspectionRecord & {
   recoveredQuantity: number;
@@ -40,8 +40,22 @@ export function sumReinspectionPassed(records: ReinspectionRecord[]) {
   return records.reduce((sum, record) => sum + Number(record.passed_quantity || 0), 0);
 }
 
+function buildGroupedDefects(sourceGroups: DefectGroup[], stage: InspectionStage, prefix: string, records: InspectionRecord[], adjustedQuantity: (record: InspectionRecord) => number): ReportDefectGroup[] {
+  return sourceGroups.map((group) => {
+    const items = group.items.map((type) => ({
+      type,
+      quantity: records.filter((record) => record.inspection_stage === stage && record.defect_type === type).reduce((sum, record) => sum + adjustedQuantity(record), 0)
+    }));
+    return {
+      group: `${prefix}${group.group}`,
+      quantity: items.reduce((sum, item) => sum + item.quantity, 0),
+      items
+    };
+  });
+}
+
 export function buildInspectionReportSummary(order: Order | null, records: InspectionRecord[], reinspections: ReinspectionRecord[]): InspectionReportSummary {
-  const total = order?.quantity ?? 0;
+  const total = Number(order?.inbound_quantity || order?.quantity || 0);
   const recoveredBySource = new Map<string, number>();
   for (const record of reinspections) {
     recoveredBySource.set(record.source_record_id, (recoveredBySource.get(record.source_record_id) ?? 0) + Number(record.passed_quantity || 0));
@@ -53,41 +67,9 @@ export function buildInspectionReportSummary(order: Order | null, records: Inspe
   const defectQty = Math.max(0, originalDefectQty - recoveredQty);
   const adjustedQuantity = (record: InspectionRecord) => Math.max(0, Number(record.quantity || 0) - (recoveredBySource.get(record.id) ?? 0));
 
-  const normalGrouped = normalDefectGroups.map((group) => {
-    const items = group.items.map((type) => ({
-      type,
-      quantity: records.filter((record) => record.inspection_stage === "normal" && record.defect_type === type).reduce((sum, record) => sum + adjustedQuantity(record), 0)
-    }));
-    return {
-      group: `検品-${group.group}`,
-      quantity: items.reduce((sum, item) => sum + item.quantity, 0),
-      items
-    };
-  });
-
-  const fieldGrouped = normalDefectGroups.map((group) => {
-    const items = group.items.map((type) => ({
-      type,
-      quantity: records.filter((record) => record.inspection_stage === "field" && record.defect_type === type).reduce((sum, record) => sum + adjustedQuantity(record), 0)
-    }));
-    return {
-      group: `出差検品-${group.group}`,
-      quantity: items.reduce((sum, item) => sum + item.quantity, 0),
-      items
-    };
-  });
-
-  const xrayGrouped = xrayDefectGroups.map((group) => {
-    const items = group.items.map((type) => ({
-      type,
-      quantity: records.filter((record) => record.inspection_stage === "xray" && record.defect_type === type).reduce((sum, record) => sum + adjustedQuantity(record), 0)
-    }));
-    return {
-      group: `X線-${group.group}`,
-      quantity: items.reduce((sum, item) => sum + item.quantity, 0),
-      items
-    };
-  });
+  const normalGrouped = buildGroupedDefects(normalDefectGroups, "normal", "検品-", records, adjustedQuantity);
+  const fieldGrouped = buildGroupedDefects(normalDefectGroups, "field", "出差検品-", records, adjustedQuantity);
+  const xrayGrouped = buildGroupedDefects(xrayDefectGroups, "xray", "X線-", records, adjustedQuantity);
 
   const colorSizeRows = new Map<string, ReportColorSizeRow>();
   for (const record of records) {
@@ -117,9 +99,3 @@ export function buildInspectionReportSummary(order: Order | null, records: Inspe
       .sort((a, b) => a.color.localeCompare(b.color, "zh-Hans-CN") || a.size.localeCompare(b.size, "zh-Hans-CN", { numeric: true }))
   };
 }
-
-export const reportService = {
-  sumInspectionQuantity,
-  sumReinspectionPassed,
-  buildInspectionReportSummary
-};

@@ -1,10 +1,12 @@
 "use client";
 
 import { useCurrentUser } from "@/components/AuthGuard";
+import { parseCartonNo } from "@/lib/cartonNumbers";
 import type { InspectionPlan } from "@/lib/types";
 import { insertOrderAttachments, uploadOrderAttachmentFile } from "@/src/api/orderAttachmentsApi";
-import { createOrder, insertOrderItems } from "@/src/api/ordersApi";
+import { createOrder, deleteOrder as deleteOrderById, insertOrderItems } from "@/src/api/ordersApi";
 import { insertReservationCartonPlan } from "@/src/api/shipmentApi";
+import { createSafeId, safeFileName } from "@/src/utils";
 import { FileSpreadsheet, Layers3, PackageSearch, Plus, Save, Trash2, Upload } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { ChangeEvent, FormEvent, useMemo, useState } from "react";
@@ -62,42 +64,28 @@ type ReservationForm = {
   reservation_remark: string;
 };
 
-function createId() {
-  if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
-  return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-}
-
 function createSize(): SizeForm {
-  return { id: createId(), size: "", carton_count: "", quantity_per_carton: "10", quantity: "" };
+  return { id: createSafeId(), size: "", carton_count: "", quantity_per_carton: "10", quantity: "" };
 }
 
 function createColor(): ColorForm {
-  return { id: createId(), color: "", sizes: [createSize()] };
+  return { id: createSafeId(), color: "", sizes: [createSize()] };
 }
 
 function createStyle(): StyleForm {
-  return { id: createId(), sku: "", colors: [createColor()] };
+  return { id: createSafeId(), sku: "", colors: [createColor()] };
 }
 
 function createPurchaseOrder(): PurchaseOrderForm {
-  return { id: createId(), po_number: "", styles: [createStyle()] };
+  return { id: createSafeId(), po_number: "", styles: [createStyle()] };
 }
 
 function createCartonPlanItem(): CartonPlanItemForm {
-  return { id: createId(), po_number: "", sku: "", color: "", size: "", quantity: "10" };
+  return { id: createSafeId(), po_number: "", sku: "", color: "", size: "", quantity: "10" };
 }
 
 function createCartonPlanGroup(): CartonPlanGroupForm {
-  return { id: createId(), carton_start: "", carton_end: "", items: [createCartonPlanItem()] };
-}
-
-function safeFileName(name: string) {
-  const dotIndex = name.lastIndexOf(".");
-  const rawBase = dotIndex > 0 ? name.slice(0, dotIndex) : name;
-  const rawExt = dotIndex > 0 ? name.slice(dotIndex + 1) : "";
-  const base = rawBase.replace(/[^A-Za-z0-9_-]/g, "_").replace(/_+/g, "_").replace(/^_+|_+$/g, "") || "file";
-  const ext = rawExt.replace(/[^A-Za-z0-9]/g, "").slice(0, 10);
-  return ext ? `${base.slice(0, 80)}.${ext}` : base.slice(0, 80);
+  return { id: createSafeId(), carton_start: "", carton_end: "", items: [createCartonPlanItem()] };
 }
 
 function toNumber(value: string | number | null | undefined) {
@@ -126,17 +114,19 @@ function expandCartonRange(start: string, end: string) {
   if (!first) return [];
   if (first === last) return [first];
 
-  const firstMatch = first.match(/^(.*?)(\d+)$/);
-  const lastMatch = last.match(/^(.*?)(\d+)$/);
-  if (!firstMatch || !lastMatch || firstMatch[1] !== lastMatch[1]) return [first, last];
+  const firstParsed = parseCartonNo(first);
+  const lastParsed = parseCartonNo(last);
+  if (firstParsed.number === null || lastParsed.number === null) return [first, last];
+  if (firstParsed.prefix !== lastParsed.prefix || firstParsed.suffix !== lastParsed.suffix) return [first, last];
 
-  const prefix = firstMatch[1];
-  const from = Number(firstMatch[2]);
-  const to = Number(lastMatch[2]);
-  if (!Number.isFinite(from) || !Number.isFinite(to) || to < from || to - from > 1000) return [first, last];
+  const prefix = firstParsed.prefix;
+  const suffix = firstParsed.suffix;
+  const from = firstParsed.number;
+  const to = lastParsed.number;
+  if (to < from || to - from > 1000) return [first, last];
 
-  const width = Math.max(firstMatch[2].length, lastMatch[2].length);
-  return Array.from({ length: to - from + 1 }, (_, index) => `${prefix}${String(from + index).padStart(width, "0")}`);
+  const width = Math.max(firstParsed.width, lastParsed.width);
+  return Array.from({ length: to - from + 1 }, (_, index) => `${prefix}${String(from + index).padStart(width, "0")}${suffix}`);
 }
 
 function cartonGroupNos(group: CartonPlanGroupForm) {
@@ -388,7 +378,7 @@ export default function NewReservationPage() {
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!user) return;
+    if (!user || saving) return;
 
     const quantityFlatItems = purchaseOrders.flatMap((order) =>
       order.styles.flatMap((style) =>
@@ -460,78 +450,97 @@ export default function NewReservationPage() {
     }
 
     const orderId = data.id;
-    const { error: itemError } = await insertOrderItems(flatItems.map((item) => ({ order_id: orderId, user_id: user.id, ...item, inbound_quantity: 0 })));
-
-    if (itemError) {
-      setSaving(false);
-      setError(`${itemError.message}。请确认 Supabase 已执行最新 schema.sql。`);
-      return;
-    }
-
-    if (reservationMode === "carton") {
-      const cartonRows = Array.from(new Set(cartonPlanGroups.flatMap((group) => cartonGroupNos(group)))).map((cartonNo) => ({
-        id: createId(),
-        order_id: orderId,
-        user_id: user.id,
-        carton_no: cartonNo,
-        remark: null
-      }));
-      const cartonIdByNo = new Map(cartonRows.map((carton) => [carton.carton_no, carton.id]));
-      const cartonItemRows = cartonPlanGroups.flatMap((group) =>
-        cartonGroupNos(group).flatMap((cartonNo) =>
-          group.items.map((item) => ({
-            reservation_carton_id: cartonIdByNo.get(cartonNo)!,
-            order_id: orderId,
-            user_id: user.id,
-            po_number: item.po_number.trim(),
-            sku: item.sku.trim(),
-            color: item.color.trim() || "未定",
-            size: item.size.trim() || "未定",
-            quantity: Number(item.quantity || 0)
-          }))
-        )
-      );
-
-      const { error: cartonError } = await insertReservationCartonPlan(cartonRows, cartonItemRows);
-      if (cartonError) {
-        setSaving(false);
-        if (/duplicate key|reservation_cartons_order_id_carton_no_key/i.test(cartonError.message)) {
-          setError("这个订单里已经保存过相同箱号。请检查是否重复提交，或重新进入订单查看。");
-        } else {
-          setError(`${cartonError.message}。请先执行最新的预约箱号数据库 SQL。`);
-        }
-        return;
+    async function cleanupOrder() {
+      try {
+        await deleteOrderById(orderId);
+      } catch {
+        // 清理失败不阻断错误提示
       }
     }
 
-    if (attachments.length > 0) {
-      const attachmentRows = [];
-      for (const file of attachments) {
-        const path = `${user.id}/${orderId}/${createId()}-${safeFileName(file.name)}`;
-        const { data: uploadData, error: uploadError } = await uploadOrderAttachmentFile(path, file);
-        if (uploadError) {
-          setSaving(false);
-          setError(`${uploadError.message}。请确认 Supabase 存储桶策略已创建，或稍后重新上传。`);
-          return;
-        }
+    try {
+      const { error: itemError } = await insertOrderItems(flatItems.map((item) => ({ order_id: orderId, user_id: user.id, ...item, inbound_quantity: 0 })));
 
-        attachmentRows.push({
+      if (itemError) {
+        await cleanupOrder();
+        setSaving(false);
+        setError(`${itemError.message}。请确认 Supabase 已执行最新 schema.sql。`);
+        return;
+      }
+
+      if (reservationMode === "carton") {
+        const cartonRows = Array.from(new Set(cartonPlanGroups.flatMap((group) => cartonGroupNos(group)))).map((cartonNo) => ({
+          id: createSafeId(),
           order_id: orderId,
           user_id: user.id,
-          file_name: file.name,
-          file_url: uploadData?.publicUrl ?? "",
-          file_path: uploadData?.path ?? path,
-          mime_type: file.type || null,
-          file_size: file.size || null
-        });
+          carton_no: cartonNo,
+          remark: null
+        }));
+        const cartonIdByNo = new Map(cartonRows.map((carton) => [carton.carton_no, carton.id]));
+        const cartonItemRows = cartonPlanGroups.flatMap((group) =>
+          cartonGroupNos(group).flatMap((cartonNo) =>
+            group.items.map((item) => ({
+              reservation_carton_id: cartonIdByNo.get(cartonNo)!,
+              order_id: orderId,
+              user_id: user.id,
+              po_number: item.po_number.trim(),
+              sku: item.sku.trim(),
+              color: item.color.trim() || "未定",
+              size: item.size.trim() || "未定",
+              quantity: Number(item.quantity || 0)
+            }))
+          )
+        );
+
+        const { error: cartonError } = await insertReservationCartonPlan(cartonRows, cartonItemRows);
+        if (cartonError) {
+          await cleanupOrder();
+          setSaving(false);
+          if (/duplicate key|reservation_cartons_order_id_carton_no_key/i.test(cartonError.message)) {
+            setError("这个订单里已经保存过相同箱号。请检查是否重复提交，或重新进入订单查看。");
+          } else {
+            setError(`${cartonError.message}。请先执行最新的预约箱号数据库 SQL。`);
+          }
+          return;
+        }
       }
 
-      const { error: attachmentError } = await insertOrderAttachments(attachmentRows);
-      if (attachmentError) {
-        setSaving(false);
-        setError(`${attachmentError.message}。请确认 Supabase 已执行最新 schema.sql。`);
-        return;
+      if (attachments.length > 0) {
+        const attachmentRows = [];
+        for (const file of attachments) {
+          const path = `${user.id}/${orderId}/${createSafeId()}-${safeFileName(file.name)}`;
+          const { data: uploadData, error: uploadError } = await uploadOrderAttachmentFile(path, file);
+          if (uploadError) {
+            await cleanupOrder();
+            setSaving(false);
+            setError(`${uploadError.message}。请确认 Supabase 存储桶策略已创建，或稍后重新上传。`);
+            return;
+          }
+
+          attachmentRows.push({
+            order_id: orderId,
+            user_id: user.id,
+            file_name: file.name,
+            file_url: uploadData?.publicUrl ?? "",
+            file_path: uploadData?.path ?? path,
+            mime_type: file.type || null,
+            file_size: file.size || null
+          });
+        }
+
+        const { error: attachmentError } = await insertOrderAttachments(attachmentRows);
+        if (attachmentError) {
+          await cleanupOrder();
+          setSaving(false);
+          setError(`${attachmentError.message}。请确认 Supabase 已执行最新 schema.sql。`);
+          return;
+        }
       }
+    } catch (error) {
+      await cleanupOrder();
+      setSaving(false);
+      setError(error instanceof Error ? error.message : "创建预约失败，请重试。");
+      return;
     }
 
     setSaving(false);

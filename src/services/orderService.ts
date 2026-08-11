@@ -1,5 +1,4 @@
 import { percent } from "@/lib/format";
-import { getActiveOrders, getOrderById, getOrderItems } from "@/src/api/ordersApi";
 import type { InspectionRecord, InspectionStage, Order, OrderItem, ReinspectionRecord } from "@/src/types";
 
 export type OrderProgress = {
@@ -78,10 +77,6 @@ export function buildDashboardMetrics(orders: Order[], records: InspectionRecord
     totalInbound,
     defectQty
   };
-}
-
-export function findActiveOrder(orders: Order[]) {
-  return orders.find((order) => order.status !== "已完成") ?? null;
 }
 
 export function toDateKey(date: Date) {
@@ -283,27 +278,3 @@ export function groupOrderItemsByColor(items: OrderItem[]): OrderItemColorGroup[
     items: groupItems
   }));
 }
-
-export const orderService = {
-  getActiveOrders,
-  getOrderById,
-  getOrderItems,
-  buildDashboardMetrics,
-  findActiveOrder,
-  toDateKey,
-  monthLabel,
-  buildCalendarDays,
-  buildOrderDaySummaries,
-  getOrdersByInboundDate,
-  getOrdersByShippingDate,
-  sortOrdersByShippingDate,
-  sumDefectQuantity,
-  sumRecoveredQuantity,
-  buildOrderProgressMap,
-  getDefaultOrderProgress,
-  groupOrdersByCustomer,
-  attachClientOrderDefects,
-  getClientOrderTotals,
-  buildClientOrderDetailReport,
-  groupOrderItemsByColor
-};

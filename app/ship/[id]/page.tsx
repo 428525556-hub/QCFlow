@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { compareCartonNo, findMissingCartonNos, sortByCartonNo } from "@/lib/cartonNumbers";
+import { compareCartonNo, findMissingCartonNos, parseCartonNo, sortByCartonNo } from "@/lib/cartonNumbers";
 import { updateOrder } from "@/src/api/ordersApi";
 import { deleteShipmentCarton, getShipmentOrderData, insertShipmentCarton, insertShipmentItems } from "@/src/api/shipmentApi";
 import { getCurrentUser } from "@/src/api/userApi";
@@ -33,6 +33,74 @@ type UnboxedSkuProgress = {
   pendingQuantity: number;
 };
 
+type CartonRowEditorProps = {
+  row: DraftRow;
+  colors: string[];
+  sizeOptions: string[];
+  summary?: { remaining: number };
+  disabled?: boolean;
+  hint: string;
+  onChange: (patch: Partial<DraftRow>) => void;
+  onRemove: () => void;
+  onSetQuantity: (quantity: number) => void;
+};
+
+function CartonRowEditor({ row, colors, sizeOptions, summary, disabled = false, hint, onChange, onRemove, onSetQuantity }: CartonRowEditorProps) {
+  const visibleSizeOptions = Array.from(new Set([row.size, ...sizeOptions].filter(Boolean)));
+  return (
+    <div className="rounded border border-line bg-blue-50 p-3">
+      <div className="grid grid-cols-2 gap-2">
+        <label className="space-y-1">
+          <span className="label">颜色</span>
+          <select className="field" value={row.color} onChange={(event) => onChange({ color: event.target.value })} disabled={disabled}>
+            {colors.map((color) => (
+              <option key={color} value={color}>
+                {color}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="space-y-1">
+          <span className="label">尺码</span>
+          <select className="field" value={row.size} onChange={(event) => onChange({ size: event.target.value })} disabled={disabled}>
+            {visibleSizeOptions.length === 0 && <option value="">未填写</option>}
+            {visibleSizeOptions.map((size) => (
+              <option key={size} value={size}>
+                {size}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <div className="mt-2 grid grid-cols-[1fr_auto] gap-2">
+        <label className="space-y-1">
+          <span className="label">数量</span>
+          <input className="field" type="number" min={1} value={row.quantity} onChange={(event) => onChange({ quantity: Number(event.target.value) })} disabled={disabled} />
+        </label>
+        <button type="button" onClick={onRemove} disabled={disabled} className="mt-6 inline-flex h-12 w-12 items-center justify-center rounded border border-red-200 bg-white text-red-700 disabled:opacity-40">
+          <Trash2 size={18} />
+        </button>
+      </div>
+      <div className="mt-2 grid grid-cols-3 gap-2">
+        {[10, 5, 15].map((preset) => (
+          <button
+            key={preset}
+            type="button"
+            onClick={() => onSetQuantity(preset)}
+            disabled={disabled}
+            className={`rounded border px-3 py-2 text-sm font-black disabled:opacity-40 ${
+              row.quantity === preset ? "border-blue-500 bg-blue-600 text-white" : "border-blue-200 bg-white text-blue-800"
+            }`}
+          >
+            {preset} 双
+          </button>
+        ))}
+      </div>
+      <p className="mt-2 text-xs font-bold text-blue-700">{hint}</p>
+    </div>
+  );
+}
+
 function newDraftRow(items: OrderItem[]): DraftRow {
   const first = items[0];
   return {
@@ -53,10 +121,6 @@ function escapeHtml(value: string | number | null | undefined) {
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;");
-}
-
-function safePdfText(value: string | number | null | undefined) {
-  return String(value ?? "").replace(/[^\x20-\x7E]/g, "?");
 }
 
 function formatCartonRanges(values: string[]) {
@@ -638,20 +702,15 @@ export default function ShipOrderPage() {
       (name || fallback)
         .replace(/[\\/?*:[\]]/g, "-")
         .slice(0, 31);
-    const parseCartonNo = (value: string) => {
-      const match = value.trim().match(/^(.*?)(\d+)(\D*)$/);
-      if (!match) return null;
-      return { prefix: match[1], number: Number(match[2]), width: match[2].length, suffix: match[3] };
-    };
     const nextCartonNo = (value: string) => {
       const parsed = parseCartonNo(value);
-      if (!parsed) return null;
+      if (parsed.number === null) return null;
       return `${parsed.prefix}${String(parsed.number + 1).padStart(parsed.width, "0")}${parsed.suffix}`;
     };
     const cartonCountForRange = (start: string, end: string) => {
       const startParsed = parseCartonNo(start);
       const endParsed = parseCartonNo(end);
-      if (startParsed && endParsed && startParsed.prefix === endParsed.prefix && startParsed.suffix === endParsed.suffix) {
+      if (startParsed.number !== null && endParsed.number !== null && startParsed.prefix === endParsed.prefix && startParsed.suffix === endParsed.suffix) {
         return Math.max(1, endParsed.number - startParsed.number + 1);
       }
       return start === end ? 1 : formatCartonRanges([start, end]).split("、").length;
@@ -1202,68 +1261,20 @@ export default function ShipOrderPage() {
               </div>
 
               <div className="space-y-3">
-                {rows.map((row) => {
-                  const sizeOptions = sizesForColor(row.color);
-                  const visibleSizeOptions = Array.from(new Set([row.size, ...sizeOptions].filter(Boolean)));
-                  const summary = itemSummary.find((item) => item.color === row.color && item.size === row.size);
-                  return (
-                    <div key={row.id} className="rounded border border-line bg-blue-50 p-3">
-                      <div className="grid grid-cols-2 gap-2">
-                        <label className="space-y-1">
-                          <span className="label">颜色</span>
-                          <select className="field" value={row.color} onChange={(event) => updateRow(row.id, { color: event.target.value })} disabled={Boolean(existingCartonForEditor)}>
-                            {colors.map((color) => (
-                              <option key={color} value={color}>
-                                {color}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                        <label className="space-y-1">
-                          <span className="label">尺码</span>
-                          <select className="field" value={row.size} onChange={(event) => updateRow(row.id, { size: event.target.value })} disabled={Boolean(existingCartonForEditor)}>
-                            {visibleSizeOptions.length === 0 && <option value="">未填写</option>}
-                            {visibleSizeOptions.map((size) => (
-                              <option key={size} value={size}>
-                                {size}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                      </div>
-                      <div className="mt-2 grid grid-cols-[1fr_auto] gap-2">
-                        <label className="space-y-1">
-                          <span className="label">数量</span>
-                          <input className="field" type="number" min={1} value={row.quantity} onChange={(event) => updateRow(row.id, { quantity: Number(event.target.value) })} disabled={Boolean(existingCartonForEditor)} />
-                        </label>
-                        <button
-                          type="button"
-                          onClick={() => removeRow(row.id)}
-                          disabled={Boolean(existingCartonForEditor)}
-                          className="mt-6 inline-flex h-12 w-12 items-center justify-center rounded border border-red-200 bg-white text-red-700 disabled:opacity-40"
-                        >
-                          <Trash2 size={18} />
-                        </button>
-                      </div>
-                      <div className="mt-2 grid grid-cols-3 gap-2">
-                        {[10, 5, 15].map((preset) => (
-                          <button
-                            key={preset}
-                            type="button"
-                            onClick={() => setRowQuantity(row.id, preset)}
-                            disabled={Boolean(existingCartonForEditor)}
-                            className={`rounded border px-3 py-2 text-sm font-black disabled:opacity-40 ${
-                              row.quantity === preset ? "border-blue-500 bg-blue-600 text-white" : "border-blue-200 bg-white text-blue-800"
-                            }`}
-                          >
-                            {preset} 双
-                          </button>
-                        ))}
-                      </div>
-                      <p className="mt-2 text-xs font-bold text-blue-700">{selectedUnboxedGroup ? "按开箱记录装箱" : `这个颜色尺码剩余可装：${summary?.remaining ?? 0}`}</p>
-                    </div>
-                  );
-                })}
+                {rows.map((row) => (
+                  <CartonRowEditor
+                    key={row.id}
+                    row={row}
+                    colors={colors}
+                    sizeOptions={sizesForColor(row.color)}
+                    summary={itemSummary.find((item) => item.color === row.color && item.size === row.size)}
+                    disabled={Boolean(existingCartonForEditor)}
+                    hint={selectedUnboxedGroup ? "按开箱记录装箱" : `这个颜色尺码剩余可装：${itemSummary.find((item) => item.color === row.color && item.size === row.size)?.remaining ?? 0}`}
+                    onChange={(patch) => updateRow(row.id, patch)}
+                    onRemove={() => removeRow(row.id)}
+                    onSetQuantity={(quantity) => setRowQuantity(row.id, quantity)}
+                  />
+                ))}
               </div>
 
               <button type="button" onClick={addRow} disabled={Boolean(existingCartonForEditor)} className="secondary-btn w-full disabled:opacity-40">
@@ -1414,60 +1425,19 @@ export default function ShipOrderPage() {
         </div>
 
         <div className="mt-4 space-y-3">
-          {rows.map((row) => {
-            const sizeOptions = sizesForColor(row.color);
-            const summary = itemSummary.find((item) => item.color === row.color && item.size === row.size);
-            return (
-              <div key={row.id} className="rounded border border-line bg-blue-50 p-3">
-                <div className="grid grid-cols-2 gap-2">
-                  <label className="space-y-1">
-                    <span className="label">颜色</span>
-                    <select className="field" value={row.color} onChange={(event) => updateRow(row.id, { color: event.target.value })}>
-                      {colors.map((color) => (
-                        <option key={color} value={color}>
-                          {color}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="space-y-1">
-                    <span className="label">尺码</span>
-                    <select className="field" value={row.size} onChange={(event) => updateRow(row.id, { size: event.target.value })}>
-                      {sizeOptions.map((size) => (
-                        <option key={size} value={size}>
-                          {size}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                </div>
-                <div className="mt-2 grid grid-cols-[1fr_auto] gap-2">
-                  <label className="space-y-1">
-                    <span className="label">数量</span>
-                    <input className="field" type="number" min={1} value={row.quantity} onChange={(event) => updateRow(row.id, { quantity: Number(event.target.value) })} />
-                  </label>
-                  <button type="button" onClick={() => removeRow(row.id)} className="mt-6 inline-flex h-12 w-12 items-center justify-center rounded border border-red-200 bg-white text-red-700">
-                    <Trash2 size={18} />
-                  </button>
-                </div>
-                <div className="mt-2 grid grid-cols-3 gap-2">
-                  {[10, 5, 15].map((preset) => (
-                    <button
-                      key={preset}
-                      type="button"
-                      onClick={() => setRowQuantity(row.id, preset)}
-                      className={`rounded border px-3 py-2 text-sm font-black ${
-                        row.quantity === preset ? "border-blue-500 bg-blue-600 text-white" : "border-blue-200 bg-white text-blue-800"
-                      }`}
-                    >
-                      {preset} 双
-                    </button>
-                  ))}
-                </div>
-                <p className="mt-2 text-xs font-bold text-blue-700">这个颜色尺码剩余可装：{summary?.remaining ?? 0}</p>
-              </div>
-            );
-          })}
+          {rows.map((row) => (
+            <CartonRowEditor
+              key={row.id}
+              row={row}
+              colors={colors}
+              sizeOptions={sizesForColor(row.color)}
+              summary={itemSummary.find((item) => item.color === row.color && item.size === row.size)}
+              hint={`这个颜色尺码剩余可装：${itemSummary.find((item) => item.color === row.color && item.size === row.size)?.remaining ?? 0}`}
+              onChange={(patch) => updateRow(row.id, patch)}
+              onRemove={() => removeRow(row.id)}
+              onSetQuantity={(quantity) => setRowQuantity(row.id, quantity)}
+            />
+          ))}
         </div>
 
         <div className="mt-4 grid grid-cols-2 gap-3">

@@ -2,6 +2,7 @@
 
 import { getCurrentUser, getUserProfile, onAuthStateChange, upsertUserProfile } from "@/src/api/userApi";
 import type { UserProfile } from "@/lib/types";
+import { ADMIN_EMAIL } from "@/lib/security";
 import type { User } from "@supabase/supabase-js";
 import { usePathname, useRouter } from "next/navigation";
 import { createContext, useContext, useEffect, useState } from "react";
@@ -15,6 +16,14 @@ export function useCurrentUser() {
 
 export function useCurrentProfile() {
   return useContext(ProfileContext);
+}
+
+function applyRoleRedirects(profile: UserProfile | null, pathname: string, router: ReturnType<typeof useRouter>) {
+  if (!profile) return;
+  if (profile.role === "client" && !pathname.startsWith("/client") && pathname !== "/login") router.replace("/client");
+  if (profile.role !== "client" && pathname.startsWith("/client")) router.replace("/");
+  if (profile.role === "field_inspector" && !pathname.startsWith("/field") && !pathname.startsWith("/field-inspect") && !pathname.startsWith("/report") && pathname !== "/login") router.replace("/field");
+  if (!["admin", "staff", "field_inspector"].includes(profile.role) && (pathname === "/field" || pathname.startsWith("/field/"))) router.replace("/");
 }
 
 export function AuthGuard({ children }: { children: React.ReactNode }) {
@@ -37,7 +46,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     }
 
     const metadata = currentUser.user_metadata ?? {};
-    const role = currentUser.email === "shuoyuqc@163.com" ? "admin" : metadata.role === "client" ? "client" : metadata.role === "field_inspector" ? "field_inspector" : "staff";
+    const role = currentUser.email === ADMIN_EMAIL ? "admin" : metadata.role === "client" ? "client" : metadata.role === "field_inspector" ? "field_inspector" : "staff";
     const customerName = role === "client" || role === "field_inspector" ? String(metadata.customer_name ?? "") : null;
     const nextProfile = {
       id: currentUser.id,
@@ -61,10 +70,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
       setLoading(false);
       if (!data.user && pathname !== "/login") router.replace("/login");
       if (data.user && pathname === "/login") router.replace(nextProfile?.role === "client" ? "/client" : nextProfile?.role === "field_inspector" ? "/field" : "/");
-      if (nextProfile?.role === "client" && !pathname.startsWith("/client") && pathname !== "/login") router.replace("/client");
-      if (nextProfile?.role !== "client" && pathname.startsWith("/client")) router.replace("/");
-      if (nextProfile?.role === "field_inspector" && !pathname.startsWith("/field") && !pathname.startsWith("/field-inspect") && !pathname.startsWith("/report") && pathname !== "/login") router.replace("/field");
-      if (!["admin", "staff", "field_inspector"].includes(nextProfile?.role ?? "") && (pathname === "/field" || pathname.startsWith("/field/"))) router.replace("/");
+      applyRoleRedirects(nextProfile, pathname, router);
     });
 
     const { data: listener } = onAuthStateChange(async (_event, session) => {
@@ -72,10 +78,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
       const nextProfile = await ensureProfile(session?.user ?? null);
       if (!session?.user && pathname !== "/login") router.replace("/login");
       if (session?.user && pathname === "/login") router.replace(nextProfile?.role === "client" ? "/client" : nextProfile?.role === "field_inspector" ? "/field" : "/");
-      if (nextProfile?.role === "client" && !pathname.startsWith("/client") && pathname !== "/login") router.replace("/client");
-      if (nextProfile?.role !== "client" && pathname.startsWith("/client")) router.replace("/");
-      if (nextProfile?.role === "field_inspector" && !pathname.startsWith("/field") && !pathname.startsWith("/field-inspect") && !pathname.startsWith("/report") && pathname !== "/login") router.replace("/field");
-      if (!["admin", "staff", "field_inspector"].includes(nextProfile?.role ?? "") && (pathname === "/field" || pathname.startsWith("/field/"))) router.replace("/");
+      applyRoleRedirects(nextProfile, pathname, router);
     });
 
     return () => {

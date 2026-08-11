@@ -1,7 +1,7 @@
 import { apiSuccess } from "@/src/server/apiResponse";
 import { withApiHandler } from "@/src/server/apiHandler";
 import { ApiError, databaseError } from "@/src/server/errors";
-import { createRequestSupabaseClient, requireRequestProfile, requireRequestUser } from "@/src/server/supabaseServer";
+import { createRequestSupabaseClient, requireRequestProfile, requireStaffProfile } from "@/src/server/supabaseServer";
 import type { Database } from "@/src/types";
 
 type OrderItemInsert = Database["public"]["Tables"]["order_items"]["Insert"];
@@ -12,7 +12,12 @@ export const GET = withApiHandler(async (request) => {
   const orderId = request.nextUrl.searchParams.get("orderId");
   let query = supabase.from("order_items").select("*");
 
-  if (profile.role === "field_inspector") {
+  if (profile.role === "client") {
+    if (!orderId) return apiSuccess([]);
+    const { data: order, error: orderError } = await supabase.from("orders").select("customer_name").eq("id", orderId).single();
+    if (orderError) throw databaseError(orderError, orderError.code === "PGRST116" ? 404 : 400);
+    if (order.customer_name !== profile.customer_name) throw new ApiError("Forbidden", 403, "FORBIDDEN");
+  } else if (profile.role === "field_inspector") {
     if (!orderId) return apiSuccess([]);
     const { data: order, error: orderError } = await supabase.from("orders").select("customer_name, inspection_plan").eq("id", orderId).single();
     if (orderError) throw databaseError(orderError, orderError.code === "PGRST116" ? 404 : 400);
@@ -27,7 +32,8 @@ export const GET = withApiHandler(async (request) => {
 });
 
 export const POST = withApiHandler(async (request) => {
-  const user = await requireRequestUser(request);
+  const { user } = await requireStaffProfile(request);
+  if (!user) throw new ApiError("Unauthorized", 401, "UNAUTHORIZED");
   const payload = (await request.json()) as OrderItemInsert[];
   const rows = payload.map((item) => ({ ...item, user_id: user.id }));
   const supabase = createRequestSupabaseClient(request);
@@ -45,7 +51,7 @@ export const POST = withApiHandler(async (request) => {
 });
 
 export const DELETE = withApiHandler(async (request) => {
-  await requireRequestUser(request);
+  await requireStaffProfile(request);
   const { ids } = (await request.json()) as { ids: string[] };
   if (!Array.isArray(ids) || ids.length === 0) throw new ApiError("ids is required", 400, "VALIDATION_ERROR");
 

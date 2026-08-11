@@ -167,37 +167,22 @@ export async function syncOrderItemIdentity(orderId: string, from: OrderItemIden
   const identityChanged = from.po_number !== to.po_number || from.sku !== to.sku || from.color !== to.color || from.size !== to.size;
   if (!identityChanged) return { error: null };
 
-  const fullMatchUpdates = [
+  const fullMatchTables = ["reservation_carton_items", "unboxing_records", "shipment_items"] as const;
+  const fullMatchUpdates = fullMatchTables.map((table) =>
     supabase
-      .from("reservation_carton_items")
-      .update(to)
-      .eq("order_id", orderId)
-      .eq("po_number", from.po_number)
-      .eq("sku", from.sku)
-      .eq("color", from.color)
-      .eq("size", from.size),
-    supabase
-      .from("unboxing_records")
-      .update(to)
-      .eq("order_id", orderId)
-      .eq("po_number", from.po_number)
-      .eq("sku", from.sku)
-      .eq("color", from.color)
-      .eq("size", from.size),
-    supabase
-      .from("shipment_items")
+      .from(table)
       .update(to)
       .eq("order_id", orderId)
       .eq("po_number", from.po_number)
       .eq("sku", from.sku)
       .eq("color", from.color)
       .eq("size", from.size)
-  ];
+  );
 
-  const colorSizeUpdates = [
-    supabase.from("inspection_records").update({ color: to.color, size: to.size }).eq("order_id", orderId).eq("color", from.color).eq("size", from.size),
-    supabase.from("reinspection_records").update({ color: to.color, size: to.size }).eq("order_id", orderId).eq("color", from.color).eq("size", from.size)
-  ];
+  const colorSizeTables = ["inspection_records", "reinspection_records"] as const;
+  const colorSizeUpdates = colorSizeTables.map((table) =>
+    supabase.from(table).update({ color: to.color, size: to.size }).eq("order_id", orderId).eq("color", from.color).eq("size", from.size)
+  );
 
   const results = await Promise.all([...fullMatchUpdates, ...colorSizeUpdates]);
   return { error: results.find((result) => result.error)?.error ?? null };
