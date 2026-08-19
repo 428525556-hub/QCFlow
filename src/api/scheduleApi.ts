@@ -81,6 +81,19 @@ export function runAutoSchedule(reason?: string) {
       noSubmittableQuantity: number;
       totalUnits: number;
     };
+    skipDetails?: Array<{
+      poNumber: string;
+      sku: string;
+      color: string;
+      size: string;
+      inspectionType: string;
+      submitStatus: string;
+      quantity: number;
+      itemInbound: number;
+      orderInbound: number;
+      submittedQuantity: number;
+      reason: string;
+    }>;
   }>("/api/schedule/plan/run", { method: "POST", body: JSON.stringify({ reason }) });
 }
 

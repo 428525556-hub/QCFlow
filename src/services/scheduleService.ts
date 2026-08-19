@@ -40,6 +40,19 @@ export type ScheduleLoadResult = {
     noSubmittableQuantity: number;
     totalUnits: number;
   };
+  skipDetails: Array<{
+    poNumber: string;
+    sku: string;
+    color: string;
+    size: string;
+    inspectionType: string;
+    submitStatus: string;
+    quantity: number;
+    itemInbound: number;
+    orderInbound: number;
+    submittedQuantity: number;
+    reason: string;
+  }>;
 };
 
 export async function loadScheduleInputs(
@@ -143,7 +156,7 @@ export async function loadScheduleInputs(
         const derived = recordDerivedPassed.get(key) ?? 0;
         const inspectedCompleted = Math.max(taskProgress, derived);
         const alreadyScheduled = scheduledByUnit.get(key) ?? 0;
-        const submitted = Math.min(Number(item.submitted_quantity ?? 0), Number(order.inbound_quantity ?? 0), Number(item.quantity ?? 0));
+        const submitted = Math.min(Number(item.submitted_quantity ?? 0), Number(item.inbound_quantity ?? 0), Number(item.quantity ?? 0));
 
         units.push({
           id: item.id,
@@ -177,6 +190,57 @@ export async function loadScheduleInputs(
     totalUnits: units.length
   };
 
+  const skipDetails: ScheduleLoadResult["skipDetails"] = [];
+  for (const unit of units) {
+    const item = itemById.get(unit.id);
+    const order = orderById.get(unit.orderId);
+    if (!item || !order) continue;
+    const cap = unit.submittedQuantity - unit.inspectedCompleted - unit.alreadyScheduled;
+    if (unit.submitStatus === "pending") {
+      skipDetails.push({
+        poNumber: unit.poNumber,
+        sku: unit.sku,
+        color: unit.color,
+        size: unit.size,
+        inspectionType: unit.inspectionType,
+        submitStatus: unit.submitStatus,
+        quantity: unit.quantity,
+        itemInbound: Number(item.inbound_quantity ?? 0),
+        orderInbound: Number(order.inbound_quantity ?? 0),
+        submittedQuantity: unit.submittedQuantity,
+        reason: "待送检（未标记可送检）"
+      });
+    } else if (unit.submitStatus === "paused") {
+      skipDetails.push({
+        poNumber: unit.poNumber,
+        sku: unit.sku,
+        color: unit.color,
+        size: unit.size,
+        inspectionType: unit.inspectionType,
+        submitStatus: unit.submitStatus,
+        quantity: unit.quantity,
+        itemInbound: Number(item.inbound_quantity ?? 0),
+        orderInbound: Number(order.inbound_quantity ?? 0),
+        submittedQuantity: unit.submittedQuantity,
+        reason: "暂停送检"
+      });
+    } else if (unit.submitStatus === "ready" && unit.quantity > 0 && cap <= 0) {
+      skipDetails.push({
+        poNumber: unit.poNumber,
+        sku: unit.sku,
+        color: unit.color,
+        size: unit.size,
+        inspectionType: unit.inspectionType,
+        submitStatus: unit.submitStatus,
+        quantity: unit.quantity,
+        itemInbound: Number(item.inbound_quantity ?? 0),
+        orderInbound: Number(order.inbound_quantity ?? 0),
+        submittedQuantity: unit.submittedQuantity,
+        reason: "可送检数量为 0（明细入库/送检数量或订单入库数量未同步）"
+      });
+    }
+  }
+
   const capacityTasks = replaceAuto ? openTasks.filter((task) => task.locked || task.source === "manual") : openTasks;
   const existingAssignments: ExistingAssignment[] = capacityTasks
     .filter((task) => task.scheduled_date >= today)
@@ -193,7 +257,7 @@ export async function loadScheduleInputs(
 
   const cancelableTaskIds = replaceAuto ? openTasks.filter((task) => !task.locked && task.source === "auto").map((task) => task.id) : [];
 
-  return { today, teams, calendar, units, existingAssignments, orders: schedulableOrders, items, teamRows, exceptions, cancelableTaskIds, skipSummary };
+  return { today, teams, calendar, units, existingAssignments, orders: schedulableOrders, items, teamRows, exceptions, cancelableTaskIds, skipSummary, skipDetails };
 }
 
 export function typesForPlan(plan: InspectionPlan): InspectionType[] {

@@ -157,6 +157,7 @@ export default function SchedulePlanPage() {
     }
     const warnings = (data?.warnings ?? []) as Array<{ level: string; message: string }>;
     const skip = data?.skipSummary;
+    const skipDetails = data?.skipDetails ?? [];
     const skipReasons: string[] = [];
     if (skip && skip.totalUnits > 0) {
       if (skip.pendingItems > 0) skipReasons.push(`${skip.pendingItems} 条明细待送检（未标记可送检）`);
@@ -167,6 +168,7 @@ export default function SchedulePlanPage() {
     setMessage(
       `自动排程完成：新生成 ${data?.inserted ?? 0} 个任务，调整 ${data?.cancelled ?? 0} 个旧任务。` +
         (skipReasons.length > 0 ? ` 未参与排程：${skipReasons.join("，")}。` : "") +
+        (skipDetails.length > 0 ? ` 明细：${skipDetails.slice(0, 3).map((row) => `${row.poNumber}/${row.sku}/${row.inspectionType === "xray" ? "X线" : row.inspectionType}(${row.reason}, 明细入库${row.itemInbound}/订单入库${row.orderInbound}/送检${row.submittedQuantity})`).join("；")}${skipDetails.length > 3 ? " 等" : ""}。` : "") +
         (warnings.length > 0 ? ` 预警 ${warnings.length} 条，详见计划列表。` : "")
     );
     await load();

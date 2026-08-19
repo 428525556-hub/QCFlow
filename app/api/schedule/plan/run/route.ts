@@ -59,6 +59,7 @@ export const POST = withApiHandler(async (request) => {
     unassigned: result.unassigned,
     warnings: result.warnings,
     taskCount: tasks.length,
-    skipSummary: inputs.skipSummary
+    skipSummary: inputs.skipSummary,
+    skipDetails: inputs.skipDetails
   });
 });
