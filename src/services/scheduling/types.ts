@@ -1,6 +1,7 @@
 export type InspectionType = "normal" | "xray" | "field";
 export type Priority = "普通" | "加急" | "特急";
-export type RiskLevel = "red" | "orange" | "yellow" | "green";
+export type RiskLevel = "green" | "yellow" | "red" | "overload";
+export type UrgencyLevel = "P0" | "P1" | "P2" | "P3";
 export type SubmitStatus = "pending" | "ready" | "paused";
 
 export interface ScheduleUnit {
@@ -63,6 +64,10 @@ export interface ExistingAssignment {
 
 export interface TaskExplanation {
   deadlineChain: { earliest: string | null; preferred: string | null; hard: string | null };
+  targetDate: string | null;
+  latestAcceptable: string | null;
+  urgency: UrgencyLevel;
+  overload: boolean;
   remainingQty: number;
   workdaysRemaining: number | null;
   teamDailyCapacity: number;
@@ -137,4 +142,6 @@ export interface ScheduleRunInput {
   existingAssignments: ExistingAssignment[];
   today: string;
   horizonDays?: number;
+  leadWorkdays?: number;
+  bufferWorkdays?: number;
 }

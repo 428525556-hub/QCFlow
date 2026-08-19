@@ -33,6 +33,13 @@ export type ScheduleLoadResult = {
   teamRows: InspectionTeam[];
   exceptions: TeamWorkException[];
   cancelableTaskIds: string[];
+  skipSummary: {
+    directShipOrders: number;
+    pendingItems: number;
+    pausedItems: number;
+    noSubmittableQuantity: number;
+    totalUnits: number;
+  };
 };
 
 export async function loadScheduleInputs(
@@ -162,6 +169,14 @@ export async function loadScheduleInputs(
     }
   }
 
+  const skipSummary = {
+    directShipOrders: orders.filter((order) => order.direct_ship).length,
+    pendingItems: units.filter((unit) => unit.submitStatus === "pending").length,
+    pausedItems: units.filter((unit) => unit.submitStatus === "paused").length,
+    noSubmittableQuantity: units.filter((unit) => unit.submitStatus === "ready" && unit.quantity > 0 && unit.submittedQuantity - unit.inspectedCompleted - unit.alreadyScheduled <= 0).length,
+    totalUnits: units.length
+  };
+
   const capacityTasks = replaceAuto ? openTasks.filter((task) => task.locked || task.source === "manual") : openTasks;
   const existingAssignments: ExistingAssignment[] = capacityTasks
     .filter((task) => task.scheduled_date >= today)
@@ -178,7 +193,7 @@ export async function loadScheduleInputs(
 
   const cancelableTaskIds = replaceAuto ? openTasks.filter((task) => !task.locked && task.source === "auto").map((task) => task.id) : [];
 
-  return { today, teams, calendar, units, existingAssignments, orders: schedulableOrders, items, teamRows, exceptions, cancelableTaskIds };
+  return { today, teams, calendar, units, existingAssignments, orders: schedulableOrders, items, teamRows, exceptions, cancelableTaskIds, skipSummary };
 }
 
 export function typesForPlan(plan: InspectionPlan): InspectionType[] {

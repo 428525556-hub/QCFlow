@@ -1,12 +1,11 @@
-import { addDays, diffCalendarDays, isWorkDay } from "./calendar.ts";
-import { pairsFromUnits, taskConsumptionUnits, teamCapacityUnits, typeFactor } from "./capacity.ts";
+import { addDays, businessDaysBetween, diffCalendarDays, isWorkDay, workdaysBefore } from "./calendar.ts";
+import { pairsFromUnits, taskConsumptionUnits, teamCapacityUnits } from "./capacity.ts";
 import { buildTaskExplanation } from "./explain.ts";
 import type {
   Assignment,
   CalendarDay,
   DailyLoad,
   InspectionType,
-  Priority,
   ProjectedCompletion,
   RiskLevel,
   ScheduleRunInput,
@@ -14,10 +13,13 @@ import type {
   ScheduleUnit,
   Team,
   UnassignedUnit,
+  UrgencyLevel,
   Warning
 } from "./types.ts";
 
 const DEFAULT_HORIZON_DAYS = 120;
+const DEFAULT_LEAD_WORKDAYS = 7;
+const DEFAULT_BUFFER_WORKDAYS = 1;
 const EPSILON = 0.000001;
 
 interface RawAssignment {
@@ -28,6 +30,17 @@ interface RawAssignment {
   reasonCodes: string[];
 }
 
+interface UnitMeta {
+  unit: ScheduleUnit;
+  toSchedule: number;
+  primary: string | null;
+  targetDate: string | null;
+  latestAcceptable: string | null;
+  tier: number;
+  riskScore: number;
+  targetReachable: boolean;
+}
+
 interface UnitResult {
   unitId: string;
   raw: RawAssignment[];
@@ -35,52 +48,83 @@ interface UnitResult {
   projected: ProjectedCompletion;
 }
 
-function priorityRank(priority: Priority): number {
+function priorityTier(unit: ScheduleUnit, meta: Omit<UnitMeta, "tier" | "riskScore">, today: string, tomorrow: string): number {
+  const primary = meta.primary;
+  if (!primary) return 5;
+  if (primary < today) return 0; // 已过送货日，最优先
+  if (primary === today) return 1; // P0 当天送货
+  if (primary === tomorrow) return 2; // P1 明天送货
+  if (!meta.targetReachable) return 3; // P2 无法提前 7 个工作日完成
+  return 4; // P3 正常
+}
+
+function riskScoreOf(
+  unit: ScheduleUnit,
+  meta: Omit<UnitMeta, "tier" | "riskScore">,
+  teamsById: Map<string, Team>,
+  today: string,
+  calendar: Record<string, CalendarDay>
+): number {
+  if (!meta.primary) return 0;
+  const totalDailyPairs = Array.from(teamsById.values())
+    .filter((team) => team.enabled && team.inspectionTypes.includes(unit.inspectionType))
+    .reduce((sum, team) => sum + team.standardDailyCapacity, 0);
+  if (totalDailyPairs <= 0) return 99;
+  const workdaysNeeded = Math.ceil(meta.toSchedule / totalDailyPairs);
+  const workdaysAvailable = Math.max(1, businessDaysBetween(today, meta.primary, calendar));
+  return workdaysNeeded / workdaysAvailable;
+}
+
+function buildMeta(unit: ScheduleUnit, ctx: { teamsById: Map<string, Team>; calendar: Record<string, CalendarDay>; today: string; leadWorkdays: number; bufferWorkdays: number }): UnitMeta | null {
+  const { teamsById, calendar, today, leadWorkdays, bufferWorkdays } = ctx;
+
+  const remainingToInspect = unit.quantity - unit.inspectedCompleted;
+  const cap = Math.max(0, unit.submittedQuantity - unit.inspectedCompleted - unit.alreadyScheduled);
+  const toSchedule = Math.min(remainingToInspect, cap);
+  if (toSchedule <= 0) return null;
+
+  const preferred = unit.preferredDeadline && unit.hardDeadline && unit.preferredDeadline > unit.hardDeadline ? unit.hardDeadline : unit.preferredDeadline;
+  const hard = unit.hardDeadline ?? preferred;
+  const primary = preferred ?? hard;
+  const earliest = unit.earliestDate ?? today;
+  const targetDate = primary ? workdaysBefore(primary, leadWorkdays, calendar) : null;
+  const latestAcceptable = primary ? workdaysBefore(primary, bufferWorkdays, calendar) : null;
+  const targetReachable = primary ? targetDate! >= earliest : false;
+  const tomorrow = addDays(today, 1);
+
+  const base = { unit, toSchedule, primary, targetDate, latestAcceptable, targetReachable };
+  const tier = !primary || earliest > primary ? 5 : priorityTier(unit, base, today, tomorrow);
+  const riskScore = riskScoreOf(unit, base, teamsById, today, calendar);
+  return { ...base, tier, riskScore };
+}
+
+function compareMeta(a: UnitMeta, b: UnitMeta): number {
+  if (a.tier !== b.tier) return a.tier - b.tier;
+  const aDate = a.tier === 4 ? a.targetDate ?? "9999-12-31" : a.primary ?? "9999-12-31";
+  const bDate = b.tier === 4 ? b.targetDate ?? "9999-12-31" : b.primary ?? "9999-12-31";
+  if (aDate !== bDate) return aDate < bDate ? -1 : 1;
+  const aRank = priorityRank(a.unit.priority);
+  const bRank = priorityRank(b.unit.priority);
+  if (aRank !== bRank) return aRank - bRank;
+  return b.riskScore - a.riskScore;
+}
+
+function priorityRank(priority: string): number {
   return priority === "特急" ? 0 : priority === "加急" ? 1 : 2;
 }
 
-function compareUnits(today: string) {
-  return (a: ScheduleUnit, b: ScheduleUnit): number => {
-    const aHardLate = a.hardDeadline && a.hardDeadline < today ? 1 : 0;
-    const bHardLate = b.hardDeadline && b.hardDeadline < today ? 1 : 0;
-    if (aHardLate !== bHardLate) return bHardLate - aHardLate;
-
-    const aPrefLate = a.preferredDeadline && a.preferredDeadline < today ? 1 : 0;
-    const bPrefLate = b.preferredDeadline && b.preferredDeadline < today ? 1 : 0;
-    if (aPrefLate !== bPrefLate) return bPrefLate - aPrefLate;
-
-    const aPreferred = a.preferredDeadline ?? "9999-12-31";
-    const bPreferred = b.preferredDeadline ?? "9999-12-31";
-    if (aPreferred !== bPreferred) return aPreferred < bPreferred ? -1 : 1;
-
-    const aRank = priorityRank(a.priority);
-    const bRank = priorityRank(b.priority);
-    if (aRank !== bRank) return aRank - bRank;
-
-    const aEarliest = a.earliestDate ?? "0000-01-01";
-    const bEarliest = b.earliestDate ?? "0000-01-01";
-    if (aEarliest !== bEarliest) return aEarliest < bEarliest ? -1 : 1;
-
-    return b.quantity - a.quantity;
-  };
-}
-
-function eligibleTeams(unit: ScheduleUnit, teamsById: Map<string, Team>): Team[] {
-  const supports = (team: Team) => team.enabled && team.inspectionTypes.includes(unit.inspectionType);
-  const byPreference = (a: Team, b: Team) =>
-    (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || b.standardDailyCapacity - a.standardDailyCapacity;
-
-  const all = Array.from(teamsById.values()).filter(supports).sort(byPreference);
-  if (!unit.assignedTeamId) return all;
-
-  const assigned = all.find((team) => team.id === unit.assignedTeamId);
-  const rest = all.filter((team) => team.id !== unit.assignedTeamId);
-  return assigned ? [assigned, ...rest] : rest;
+function urgencyOf(tier: number): UrgencyLevel {
+  if (tier <= 1) return "P0";
+  if (tier === 2) return "P1";
+  if (tier === 3) return "P2";
+  return "P3";
 }
 
 export function runSchedule(input: ScheduleRunInput): ScheduleRunResult {
   const { units, teams, calendar, existingAssignments, today } = input;
   const horizonDays = Math.max(7, input.horizonDays ?? DEFAULT_HORIZON_DAYS);
+  const leadWorkdays = input.leadWorkdays ?? DEFAULT_LEAD_WORKDAYS;
+  const bufferWorkdays = input.bufferWorkdays ?? DEFAULT_BUFFER_WORKDAYS;
   const teamsById = new Map(teams.filter((team) => team.enabled).map((team) => [team.id, team]));
 
   const used = new Map<string, Map<string, number>>();
@@ -108,7 +152,6 @@ export function runSchedule(input: ScheduleRunInput): ScheduleRunResult {
     return Math.max(0, capacity - consumed);
   }
 
-  // 已有任务（含锁定任务）占用产能
   for (const assignment of existingAssignments) {
     if (!assignment.teamId) continue;
     const team = teamsById.get(assignment.teamId);
@@ -117,11 +160,18 @@ export function runSchedule(input: ScheduleRunInput): ScheduleRunResult {
     consume(assignment.date, assignment.teamId, units);
   }
 
-  const sortedUnits = [...units].sort(compareUnits(today));
-  const unitResults: UnitResult[] = [];
+  const ctx = { teamsById, freeUnits, consume, calendar, today, leadWorkdays, bufferWorkdays };
+  const metas: UnitMeta[] = [];
+  for (const unit of units) {
+    const meta = buildMeta(unit, ctx);
+    if (meta) metas.push(meta);
+  }
+  metas.sort(compareMeta);
+  const metaByUnit = new Map(metas.map((meta) => [meta.unit.id, meta]));
 
-  for (const unit of sortedUnits) {
-    unitResults.push(scheduleUnit(unit, { teamsById, freeUnits, consume, calendar, today }));
+  const unitResults: UnitResult[] = [];
+  for (const meta of metas) {
+    unitResults.push(scheduleUnit(meta, ctx));
   }
 
   const assignments: Assignment[] = [];
@@ -134,6 +184,7 @@ export function runSchedule(input: ScheduleRunInput): ScheduleRunResult {
       const team = teamsById.get(raw.teamId);
       if (!team) continue;
       const capacityUnits = teamCapacityUnits(team, raw.scheduledDate, calendar);
+      const meta = metaByUnit.get(raw.unit.id);
       const explanation = buildTaskExplanation({
         unit: raw.unit,
         team,
@@ -142,7 +193,11 @@ export function runSchedule(input: ScheduleRunInput): ScheduleRunResult {
         riskLevel: result.projected.riskLevel,
         today,
         calendar,
-        capacityUnits
+        capacityUnits,
+        targetDate: meta?.targetDate ?? null,
+        latestAcceptable: meta?.latestAcceptable ?? null,
+        urgency: urgencyOf(meta?.tier ?? 4),
+        overload: result.projected.riskLevel === "overload"
       });
       assignments.push({
         unitId: raw.unit.id,
@@ -164,27 +219,28 @@ export function runSchedule(input: ScheduleRunInput): ScheduleRunResult {
     if (result.unassigned) {
       unassigned.push(result.unassigned);
       warnings.push({
-        level: "red",
+        level: result.unassigned.reason === "overload" ? "overload" : "red",
         unitId: result.unassigned.unitId,
-        message: result.unassigned.reason === "config_conflict"
-          ? "配置冲突：预计可检日期晚于最终出货日期，需人工处理。"
-          : result.unassigned.reason === "missing_deadline"
-            ? "缺少 Deadline（送货/出货日期均未设置），无法排程。"
-            : result.unassigned.reason === "paused"
-              ? "该明细已暂停送检，未排程。"
-              : `当前产能不足，剩余 ${result.unassigned.remaining} 双无法在最终出货日期前完成，预计延期 ${result.unassigned.projectedDelayDays} 个工作日。`
-      });
-    } else if (result.projected.riskLevel === "orange" && result.projected.projectedDate) {
-      warnings.push({
-        level: "orange",
-        unitId: result.raw[0]?.unit.id,
-        message: `无法满足预约送货日期，距离最终出货还有 ${result.projected.bufferDays ?? 0} 天缓冲。`
+        message:
+          result.unassigned.reason === "config_conflict"
+            ? "配置冲突：预计可检日期晚于送货/出货日期，需人工处理。"
+            : result.unassigned.reason === "missing_deadline"
+              ? "缺少 Deadline（送货/出货日期均未设置），无法排程。"
+              : result.unassigned.reason === "paused"
+                ? "该明细已暂停送检，未排程。"
+                : `当前产能不足，按照现有排班无法在要求时间内完成该订单（超负荷），剩余 ${result.unassigned.remaining} 双，预计延期 ${result.unassigned.projectedDelayDays} 个工作日。`
       });
     } else if (result.projected.riskLevel === "red" && result.projected.projectedDate) {
       warnings.push({
         level: "red",
         unitId: result.raw[0]?.unit.id,
-        message: `预计完成日期超过最终出货日期 ${Math.abs(result.projected.bufferDays ?? 0)} 天。`
+        message: `需要非常集中排班才能按时完成（红色预警），预计完成 ${result.projected.projectedDate}。`
+      });
+    } else if (result.projected.riskLevel === "yellow" && result.projected.projectedDate) {
+      warnings.push({
+        level: "yellow",
+        unitId: result.raw[0]?.unit.id,
+        message: "无法提前 7 个工作日完成，但可在送货前 1 个工作日完成（黄色预警）。"
       });
     }
 
@@ -215,7 +271,7 @@ export function runSchedule(input: ScheduleRunInput): ScheduleRunResult {
 }
 
 function scheduleUnit(
-  unit: ScheduleUnit,
+  meta: UnitMeta,
   ctx: {
     teamsById: Map<string, Team>;
     freeUnits: (date: string, team: Team, type: InspectionType) => number;
@@ -224,83 +280,106 @@ function scheduleUnit(
     today: string;
   }
 ): UnitResult {
+  const unit = meta.unit;
   const { teamsById, freeUnits, consume, calendar, today } = ctx;
   const raw: RawAssignment[] = [];
-
-  const remainingToInspect = unit.quantity - unit.inspectedCompleted;
-  const cap = Math.max(0, unit.submittedQuantity - unit.inspectedCompleted - unit.alreadyScheduled);
-  let toSchedule = Math.min(remainingToInspect, cap);
-  if (toSchedule <= 0) {
-    return { unitId: unit.id, raw, unassigned: null, projected: { projectedDate: null, bufferDays: null, riskLevel: "green" } };
-  }
+  const toSchedule = meta.toSchedule;
+  // 不允许排到过去：最早可排日期取 max(预计可检日期, 今天)
+  const earliest = unit.earliestDate && unit.earliestDate > today ? unit.earliestDate : today;
 
   if (unit.submitStatus === "paused") {
     return {
       unitId: unit.id,
       raw,
       unassigned: { unitId: unit.id, orderId: unit.orderId, remaining: toSchedule, reason: "paused", projectedDelayDays: 0 },
-      projected: { projectedDate: null, bufferDays: null, riskLevel: "red" }
+      projected: { projectedDate: null, bufferDays: null, riskLevel: "overload" }
     };
   }
-
-  // 配置防护：预约送货日期晚于最终出货日期时，以最终出货日期为准
-  const preferred = unit.preferredDeadline && unit.hardDeadline && unit.preferredDeadline > unit.hardDeadline ? unit.hardDeadline : unit.preferredDeadline;
-  const hard = unit.hardDeadline ?? preferred;
-  if (!preferred && !hard) {
+  if (!meta.primary) {
     return {
       unitId: unit.id,
       raw,
       unassigned: { unitId: unit.id, orderId: unit.orderId, remaining: toSchedule, reason: "missing_deadline", projectedDelayDays: 0 },
-      projected: { projectedDate: null, bufferDays: null, riskLevel: "red" }
+      projected: { projectedDate: null, bufferDays: null, riskLevel: "overload" }
     };
   }
-  const deadline = (hard ?? preferred)!;
-
-  const earliest = unit.earliestDate ?? today;
-  if (earliest > deadline) {
+  if (earliest > meta.primary && meta.primary >= today) {
     return {
       unitId: unit.id,
       raw,
       unassigned: { unitId: unit.id, orderId: unit.orderId, remaining: toSchedule, reason: "config_conflict", projectedDelayDays: 0 },
-      projected: { projectedDate: null, bufferDays: null, riskLevel: "red" }
+      projected: { projectedDate: null, bufferDays: null, riskLevel: "overload" }
     };
   }
 
+  const primary = meta.primary;
+
   const candidates = eligibleTeams(unit, teamsById);
-  const arrivalLimited = cap < remainingToInspect;
+  const arrivalLimited = unit.submittedQuantity - unit.inspectedCompleted - unit.alreadyScheduled < unit.quantity - unit.inspectedCompleted;
   const reasonCodes: string[] = arrivalLimited ? ["arrival_limited"] : [];
   let remaining = toSchedule;
   let lastDate: string | null = null;
+  let projectedDate: string | null = null;
 
-  // Phase A：从预约送货日期向前倒排
-  const startBackward = preferred ?? deadline;
+  // 已过送货/出货日：从今天开始正排追赶，尽快完成
+  if (primary < today) {
+    let date = today;
+    while (remaining > 0 && date <= addDays(today, 60)) {
+      remaining = allocateDay(unit, date, candidates, remaining, raw, reasonCodes, freeUnits, consume, calendar, today);
+      date = addDays(date, 1);
+    }
+    lastDate = raw.length > 0 ? raw[raw.length - 1].scheduledDate : null;
+    if (remaining > 0) {
+      return {
+        unitId: unit.id,
+        raw,
+        unassigned: {
+          unitId: unit.id,
+          orderId: unit.orderId,
+          remaining,
+          reason: "overload",
+          note: arrivalLimited ? "部分受实际可检数量限制" : undefined,
+          projectedDelayDays: 0
+        },
+        projected: { projectedDate: null, bufferDays: null, riskLevel: "overload" }
+      };
+    }
+    return {
+      unitId: unit.id,
+      raw,
+      unassigned: null,
+      projected: { projectedDate: lastDate, bufferDays: null, riskLevel: "red" }
+    };
+  }
+
+  // 第一阶段：从目标完成日期（或最晚可接受日期）向前倒排
+  const startBackward = meta.targetReachable ? meta.targetDate! : meta.latestAcceptable!;
   if (startBackward >= earliest) {
     let date = startBackward;
     while (date >= earliest && remaining > 0) {
-      remaining = allocateDay(unit, date, candidates, remaining, raw, reasonCodes, freeUnits, consume, ctx.calendar, today);
+      remaining = allocateDay(unit, date, candidates, remaining, raw, reasonCodes, freeUnits, consume, calendar, today);
       date = addDays(date, -1);
     }
-    // 倒排是"越往前越晚入队"，首个元素即最晚（最接近 Deadline）的日期
     lastDate = raw.length > 0 ? raw[0].scheduledDate : null;
   }
 
-  // Phase B：送货日期前排不完，向最终出货日期方向延伸
-  if (remaining > 0 && preferred && deadline > preferred) {
-    reasonCodes.push("preferred_missed");
-    let date = addDays(preferred, 1);
-    while (date <= deadline && remaining > 0) {
-      remaining = allocateDay(unit, date, candidates, remaining, raw, reasonCodes, freeUnits, consume, ctx.calendar, today);
+  // 第二阶段：目标前排不完，向送货/出货日方向压缩
+  if (remaining > 0 && primary > startBackward) {
+    reasonCodes.push("compressed");
+    let date = addDays(startBackward, 1);
+    while (date <= primary && remaining > 0) {
+      remaining = allocateDay(unit, date, candidates, remaining, raw, reasonCodes, freeUnits, consume, calendar, today);
       date = addDays(date, 1);
     }
     lastDate = raw.length > 0 ? raw[raw.length - 1].scheduledDate : lastDate;
   }
 
-  let projectedDate = lastDate;
+  projectedDate = lastDate;
   let delayDays = 0;
 
   if (remaining > 0) {
     projectedDate = null;
-    delayDays = estimateDelayDays(unit, candidates, remaining, deadline, calendar, today, freeUnits, consume, teamsById);
+    delayDays = estimateDelayDays(unit, candidates, remaining, primary, calendar, today, freeUnits, consume, teamsById);
     return {
       unitId: unit.id,
       raw,
@@ -308,16 +387,16 @@ function scheduleUnit(
         unitId: unit.id,
         orderId: unit.orderId,
         remaining,
-        reason: "capacity",
+        reason: "overload",
         note: arrivalLimited ? "部分受实际可检数量限制" : undefined,
         projectedDelayDays: delayDays
       },
-      projected: { projectedDate: null, bufferDays: null, riskLevel: "red" }
+      projected: { projectedDate: null, bufferDays: null, riskLevel: "overload" }
     };
   }
 
-  const riskLevel = evaluateRisk(projectedDate, preferred, deadline);
-  const bufferDays = projectedDate ? diffCalendarDays(projectedDate, deadline) : null;
+  const riskLevel = evaluateRisk(projectedDate, meta);
+  const bufferDays = projectedDate && primary ? diffCalendarDays(projectedDate, primary) : null;
   return {
     unitId: unit.id,
     raw,
@@ -352,13 +431,14 @@ function allocateDay(
     consume(date, team.id, consumed);
 
     const codes = [...reasonCodes];
-    if (date === unit.preferredDeadline || date === (unit.hardDeadline ?? unit.preferredDeadline)) {
+    if (date === (unit.preferredDeadline ?? unit.hardDeadline)) {
       codes.push("deadline_driven");
+    } else if (date === (unit.earliestDate ?? today)) {
+      codes.push("earliest_start");
     } else {
       codes.push("capacity_split");
     }
     if (unit.assignedTeamId && team.id !== unit.assignedTeamId) codes.push("overflow_team");
-    if (date === (unit.earliestDate ?? today) && remaining - quantity > 0) codes.push("earliest_start");
 
     raw.push({ unit, scheduledDate: date, teamId: team.id, plannedQuantity: quantity, reasonCodes: codes });
     remaining -= quantity;
@@ -367,18 +447,30 @@ function allocateDay(
   return remaining;
 }
 
+function eligibleTeams(unit: ScheduleUnit, teamsById: Map<string, Team>): Team[] {
+  const supports = (team: Team) => team.enabled && team.inspectionTypes.includes(unit.inspectionType);
+  const byPreference = (a: Team, b: Team) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || b.standardDailyCapacity - a.standardDailyCapacity;
+
+  const all = Array.from(teamsById.values()).filter(supports).sort(byPreference);
+  if (!unit.assignedTeamId) return all;
+
+  const assigned = all.find((team) => team.id === unit.assignedTeamId);
+  const rest = all.filter((team) => team.id !== unit.assignedTeamId);
+  return assigned ? [assigned, ...rest] : rest;
+}
+
 function estimateDelayDays(
   unit: ScheduleUnit,
   candidates: Team[],
   remaining: number,
-  hard: string,
+  primary: string,
   calendar: Record<string, CalendarDay>,
   today: string,
   freeUnits: (date: string, team: Team, type: InspectionType) => number,
   consume: (date: string, teamId: string | null, units: number) => void,
   teamsById: Map<string, Team>
 ): number {
-  let date = addDays(hard, 1);
+  let date = addDays(primary, 1);
   let workdays = 0;
   let left = remaining;
   while (left > 0 && workdays < 60) {
@@ -401,22 +493,11 @@ function estimateDelayDays(
   return workdays;
 }
 
-function evaluateRisk(projectedDate: string | null, preferred: string | null, hard: string | null): RiskLevel {
-  if (!projectedDate) return "red";
-  if (hard && projectedDate > hard) return "red";
-  if (preferred && projectedDate > preferred) return "orange";
-  return "green";
-}
-
-export function calculateUtilizationPercent(utilization: number): number {
-  if (!Number.isFinite(utilization)) return 100;
-  return Math.round(utilization * 1000) / 10;
-}
-
-export function consumptionUnitsOf(quantity: number, styleFactor: number, team: Team, type: InspectionType): number {
-  return taskConsumptionUnits(quantity, styleFactor, team, type);
-}
-
-export function capacityFactorOf(team: Team, type: InspectionType): number {
-  return typeFactor(team, type);
+function evaluateRisk(projectedDate: string | null, meta: UnitMeta): RiskLevel {
+  if (!projectedDate) return "overload";
+  const { targetDate, latestAcceptable, primary } = meta;
+  if (targetDate && projectedDate <= targetDate) return "green";
+  if (latestAcceptable && projectedDate <= latestAcceptable) return "yellow";
+  if (primary && projectedDate <= primary) return "red";
+  return "overload";
 }

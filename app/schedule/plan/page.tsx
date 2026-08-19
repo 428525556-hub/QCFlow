@@ -8,6 +8,7 @@ import {
   adjustScheduleTask,
   applyUrgentInsert,
   getInspectionTeams,
+  getOrderSchedulePlan,
   getScheduleLogs,
   getSchedulePlan,
   previewUrgentInsert,
@@ -44,15 +45,30 @@ type InsertPreviewData = {
   summary: { delayedOrders: number; newRedRisks: number; newOrangeRisks: number };
 };
 
+type OrderPlanData = {
+  order: Order | null;
+  items: OrderItem[];
+  tasks: PlanTask[];
+  summary: {
+    remainingPlanned: number;
+    projectedDate: string | null;
+    riskLevel: string;
+    targetDate: string | null;
+    latestAcceptable: string | null;
+    perDate: Array<{ date: string; quantity: number; completed: number; urgent: boolean }>;
+  };
+};
+
 const RISK_LABELS: Record<string, { text: string; className: string }> = {
-  red: { text: "延期风险", className: "bg-red-100 text-red-700" },
-  orange: { text: "送货预警", className: "bg-orange-100 text-orange-700" },
-  yellow: { text: "产能紧张", className: "bg-yellow-100 text-yellow-700" },
-  green: { text: "正常", className: "bg-emerald-100 text-emerald-700" }
+  green: { text: "正常", className: "bg-emerald-100 text-emerald-700" },
+  yellow: { text: "黄色预警", className: "bg-yellow-100 text-yellow-700" },
+  red: { text: "红色预警", className: "bg-red-100 text-red-700" },
+  overload: { text: "超负荷", className: "bg-purple-100 text-purple-700" }
 };
 
 const REASON_LABELS: Record<string, string> = {
   deadline_driven: "按 Deadline 倒排",
+  compressed: "时间紧迫压缩",
   capacity_split: "产能拆分",
   earliest_start: "最早可检",
   arrival_limited: "送检限制",
@@ -92,6 +108,9 @@ export default function SchedulePlanPage() {
   const [submitItemId, setSubmitItemId] = useState("");
   const [submitQty, setSubmitQty] = useState("");
   const [submitStatus, setSubmitStatus] = useState<"pending" | "ready" | "paused">("ready");
+  const [orderPlanId, setOrderPlanId] = useState<string | null>(null);
+  const [orderPlan, setOrderPlan] = useState<OrderPlanData | null>(null);
+  const [orderPlanLoading, setOrderPlanLoading] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -137,8 +156,18 @@ export default function SchedulePlanPage() {
       return;
     }
     const warnings = (data?.warnings ?? []) as Array<{ level: string; message: string }>;
+    const skip = data?.skipSummary;
+    const skipReasons: string[] = [];
+    if (skip && skip.totalUnits > 0) {
+      if (skip.pendingItems > 0) skipReasons.push(`${skip.pendingItems} 条明细待送检（未标记可送检）`);
+      if (skip.noSubmittableQuantity > 0) skipReasons.push(`${skip.noSubmittableQuantity} 条明细未入库/可送检数量为 0`);
+      if (skip.pausedItems > 0) skipReasons.push(`${skip.pausedItems} 条明细暂停送检`);
+      if (skip.directShipOrders > 0) skipReasons.push(`${skip.directShipOrders} 个订单直接出货`);
+    }
     setMessage(
-      `自动排程完成：新生成 ${data?.inserted ?? 0} 个任务，调整 ${data?.cancelled ?? 0} 个旧任务。${warnings.length > 0 ? ` 预警 ${warnings.length} 条，详见计划列表。` : ""}`
+      `自动排程完成：新生成 ${data?.inserted ?? 0} 个任务，调整 ${data?.cancelled ?? 0} 个旧任务。` +
+        (skipReasons.length > 0 ? ` 未参与排程：${skipReasons.join("，")}。` : "") +
+        (warnings.length > 0 ? ` 预警 ${warnings.length} 条，详见计划列表。` : "")
     );
     await load();
   }
@@ -205,6 +234,42 @@ export default function SchedulePlanPage() {
     await load();
   }
 
+  async function submitAllInbound() {
+    const targets = allItems.filter(
+      ({ item }) =>
+        Number(item.inbound_quantity || 0) > 0 &&
+        (Number(item.submitted_quantity || 0) !== Number(item.inbound_quantity || 0) || item.submit_status !== "ready")
+    );
+    if (targets.length === 0) {
+      setMessage("没有需要处理的明细（已入库的都已标记为可送检）。");
+      return;
+    }
+    if (!window.confirm(`将 ${targets.length} 条已入库明细标记为可送检并同步数量，确认？`)) return;
+    for (const { item } of targets) {
+      const { error } = await updateOrderItem(item.id, { submitted_quantity: item.inbound_quantity, submit_status: "ready" });
+      if (error) {
+        setMessage(`处理失败：${error.message}`);
+        return;
+      }
+    }
+    setMessage(`已将 ${targets.length} 条明细标记为可送检。`);
+    await load();
+  }
+
+  async function openOrderPlan(orderId: string) {
+    setOrderPlanId(orderId);
+    setOrderPlan(null);
+    setOrderPlanLoading(true);
+    const { data, error } = await getOrderSchedulePlan(orderId);
+    setOrderPlanLoading(false);
+    if (error) {
+      setMessage(error.message);
+      setOrderPlanId(null);
+      return;
+    }
+    setOrderPlan((data ?? null) as OrderPlanData | null);
+  }
+
   async function toggleLock(task: PlanTask) {
     const action = task.locked ? "unlock" : "lock";
     const reason = task.locked ? "解除手动锁定" : "手动锁定该任务，自动重排不修改";
@@ -220,6 +285,10 @@ export default function SchedulePlanPage() {
   function renderExplanation(task: PlanTask) {
     const explanation = (task.explanation ?? {}) as {
       deadlineChain?: { earliest: string | null; preferred: string | null; hard: string | null };
+      targetDate?: string | null;
+      latestAcceptable?: string | null;
+      urgency?: string;
+      overload?: boolean;
       remainingQty?: number;
       workdaysRemaining?: number | null;
       teamDailyCapacity?: number;
@@ -254,6 +323,16 @@ export default function SchedulePlanPage() {
         <div>
           <dt className="text-xs font-bold text-slate-500">班组产能(单位)</dt>
           <dd className="font-black">{explanation.teamDailyCapacity ?? "-"}</dd>
+        </div>
+        <div>
+          <dt className="text-xs font-bold text-slate-500">目标/最晚完成日</dt>
+          <dd className="font-black">
+            {explanation.targetDate ?? "-"} / {explanation.latestAcceptable ?? "-"}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-xs font-bold text-slate-500">紧急级别</dt>
+          <dd className="font-black">{explanation.urgency ?? "-"}{explanation.overload ? " · 超负荷" : ""}</dd>
         </div>
         <div className="col-span-2 flex flex-wrap gap-1 md:col-span-4">
           {codes.map((code) => (
@@ -331,6 +410,10 @@ export default function SchedulePlanPage() {
               <Send size={18} />
               送检登记
             </button>
+            <button type="button" onClick={submitAllInbound} className="secondary-btn">
+              <Check size={18} />
+              全部按已入库送检
+            </button>
           </div>
 
           {loading && <div className="panel p-5 text-sm text-slate-500">正在加载...</div>}
@@ -360,6 +443,7 @@ export default function SchedulePlanPage() {
                         <th className="px-3 py-2">班组</th>
                         <th className="px-3 py-2 text-right">计划(标准单位)</th>
                         <th className="px-3 py-2 text-right">可用产能</th>
+                        <th className="px-3 py-2 text-right">剩余产能</th>
                         <th className="px-3 py-2 text-right">利用率</th>
                       </tr>
                     </thead>
@@ -370,6 +454,7 @@ export default function SchedulePlanPage() {
                           <td className="px-3 py-2">{plan.teams.find((team) => team.id === load.teamId)?.name ?? "-"}</td>
                           <td className="px-3 py-2 text-right">{load.plannedUnits.toLocaleString()}</td>
                           <td className="px-3 py-2 text-right">{load.capacityUnits.toLocaleString()}</td>
+                          <td className="px-3 py-2 text-right">{Math.max(0, load.capacityUnits - load.plannedUnits).toLocaleString()}</td>
                           <td className={`px-3 py-2 text-right font-black ${load.utilization > 100 ? "text-red-600" : load.utilization > 90 ? "text-amber-600" : "text-slate-700"}`}>
                             {load.utilization}%
                           </td>
@@ -377,7 +462,7 @@ export default function SchedulePlanPage() {
                       ))}
                       {plan.dailyLoads.length === 0 && (
                         <tr>
-                          <td colSpan={5} className="px-3 py-4 text-center text-sm text-slate-500">
+                          <td colSpan={6} className="px-3 py-4 text-center text-sm text-slate-500">
                             当前窗口没有排程任务。
                           </td>
                         </tr>
@@ -439,6 +524,10 @@ export default function SchedulePlanPage() {
                               >
                                 <Settings2 size={14} />
                                 调整
+                              </button>
+                              <button type="button" onClick={() => openOrderPlan(task.order_id)} className="secondary-btn h-9 px-2.5 text-xs">
+                                <CalendarClock size={14} />
+                                订单计划
                               </button>
                               <button type="button" onClick={() => toggleLock(task)} className="icon-btn text-amber-600" aria-label={task.locked ? "解锁" : "锁定"} title={task.locked ? "解锁（自动重排可修改）" : "锁定（自动重排不修改）"}>
                                 {task.locked ? <LockOpen size={16} /> : <Lock size={16} />}
@@ -631,7 +720,7 @@ export default function SchedulePlanPage() {
                 <X size={18} />
               </button>
             </div>
-            <p className="text-xs text-slate-500">登记后可排程数量。入库数量会自动同步到送检数量，但状态保持待送检，需在这里标记「可送检」才会参与排程。</p>
+            <p className="text-xs text-slate-500">登记后可排程数量。入库时数量会自动同步且状态自动变为可送检；这里可手动调整数量或改回待送检/暂停送检。</p>
             <label className="text-sm font-bold text-slate-700">
               订单明细
               <select
@@ -688,6 +777,82 @@ export default function SchedulePlanPage() {
               {explainTask.order?.po_number ?? "-"} · {explainTask.item?.sku ?? "-"} · {explainTask.scheduled_date} · {explainTask.teamName ?? "-"}
             </p>
             {renderExplanation(explainTask)}
+          </div>
+        </div>
+      )}
+
+      {orderPlanId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setOrderPlanId(null)}>
+          <div className="max-h-[85vh] w-full max-w-2xl space-y-3 overflow-y-auto rounded bg-white p-5 shadow-xl" onClick={(event) => event.stopPropagation()}>
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="text-lg font-black text-blue-950">订单检品计划</h3>
+              <button type="button" onClick={() => setOrderPlanId(null)} className="icon-btn" aria-label="关闭">
+                <X size={18} />
+              </button>
+            </div>
+
+            {orderPlanLoading && <p className="text-sm text-slate-500">正在加载...</p>}
+
+            {!orderPlanLoading && orderPlan && (
+              <>
+                <p className="text-sm font-bold text-slate-600">
+                  {orderPlan.order?.po_number ?? "-"} · {orderPlan.order?.customer_name ?? "-"} · 总数 {orderPlan.order?.quantity ?? "-"} 双
+                </p>
+                <div className="grid grid-cols-2 gap-2 text-sm md:grid-cols-4">
+                  <div className="rounded border border-line bg-blue-50 p-2">
+                    <p className="text-xs font-bold text-slate-500">剩余待排</p>
+                    <p className="font-black">{orderPlan.summary.remainingPlanned.toLocaleString()}</p>
+                  </div>
+                  <div className="rounded border border-line bg-blue-50 p-2">
+                    <p className="text-xs font-bold text-slate-500">目标完成（提前7个工作日）</p>
+                    <p className="font-black">{orderPlan.summary.targetDate ?? "-"}</p>
+                  </div>
+                  <div className="rounded border border-line bg-blue-50 p-2">
+                    <p className="text-xs font-bold text-slate-500">当前预计完成</p>
+                    <p className="font-black">{orderPlan.summary.projectedDate ?? "-"}</p>
+                  </div>
+                  <div className="rounded border border-line bg-blue-50 p-2">
+                    <p className="text-xs font-bold text-slate-500">风险等级</p>
+                    <span className={`mt-0.5 inline-block rounded px-1.5 py-0.5 text-[11px] font-black ${RISK_LABELS[orderPlan.summary.riskLevel]?.className ?? "bg-emerald-100 text-emerald-700"}`}>
+                      {RISK_LABELS[orderPlan.summary.riskLevel]?.text ?? "正常"}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="rounded border border-line bg-blue-50/60 p-3">
+                  <p className="mb-2 font-black text-blue-950">每日检品计划</p>
+                  <div className="space-y-1">
+                    {orderPlan.summary.perDate.map((row) => (
+                      <div key={row.date} className="flex items-center justify-between rounded bg-white px-3 py-2 text-sm">
+                        <span className="font-black">{row.date}</span>
+                        <span className="flex items-center gap-2">
+                          {row.urgent && <span className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-black text-red-700">紧急</span>}
+                          <span className="font-black">{row.quantity.toLocaleString()} 双</span>
+                          <span className="text-xs text-emerald-700">已完成 {row.completed.toLocaleString()}</span>
+                        </span>
+                      </div>
+                    ))}
+                    {orderPlan.summary.perDate.length === 0 && <p className="text-sm text-slate-500">该订单暂无排程任务。</p>}
+                  </div>
+                </div>
+
+                <div className="rounded border border-line bg-blue-50/60 p-3">
+                  <p className="mb-2 font-black text-blue-950">任务明细（{orderPlan.tasks.length}）</p>
+                  <div className="space-y-1">
+                    {orderPlan.tasks.map((task) => (
+                      <div key={task.id} className="flex flex-wrap items-center justify-between gap-2 rounded bg-white px-3 py-2 text-sm">
+                        <span className="font-black">{task.scheduled_date} · {task.teamName ?? "-"}</span>
+                        <span className="flex items-center gap-2">
+                          <span className="rounded bg-slate-100 px-2 py-0.5 text-xs font-black text-slate-700">{task.status}</span>
+                          <span className="font-black">{task.planned_quantity.toLocaleString()} 双</span>
+                        </span>
+                      </div>
+                    ))}
+                    {orderPlan.tasks.length === 0 && <p className="text-sm text-slate-500">暂无任务。</p>}
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}

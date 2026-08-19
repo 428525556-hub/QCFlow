@@ -110,11 +110,11 @@ export const GET = withApiHandler(async (request) => {
     completedTotal += task.completed_quantity;
 
     const risk = riskFromExplanation(task.explanation);
-    if (risk === "red" || risk === "orange") {
+    if (risk === "red" || risk === "overload") {
       riskCount += 1;
-      warnings.push(`${task.priority === "特急" ? "紧急" : "订单"} ${order?.po_number ?? task.order_id} ${risk === "red" ? "存在延期风险" : "存在送货延误风险"}。`);
+      warnings.push(`${task.priority === "特急" ? "紧急" : "订单"} ${order?.po_number ?? task.order_id} ${risk === "overload" ? "超负荷，无法按时完成" : "需要非常集中排班才能完成"}。`);
     }
-    if (task.priority === "加急" || task.priority === "特急" || task.status === "延期" || risk === "red") urgentCount += 1;
+    if (task.priority === "加急" || task.priority === "特急" || task.status === "延期" || risk === "red" || risk === "overload") urgentCount += 1;
   }
 
   const teamList = Array.from(teamGroups.values()).map((group) => {

@@ -58,6 +58,7 @@ export const POST = withApiHandler(async (request) => {
     ...(data as Record<string, unknown>),
     unassigned: result.unassigned,
     warnings: result.warnings,
-    taskCount: tasks.length
+    taskCount: tasks.length,
+    skipSummary: inputs.skipSummary
   });
 });

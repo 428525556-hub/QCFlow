@@ -3,9 +3,10 @@
 import { StatusBadge } from "@/components/StatusBadge";
 import { useLanguage } from "@/components/LanguageProvider";
 import { getOrdersProgressData, subscribeOrdersProgress } from "@/src/api/ordersApi";
+import { getOrderSchedulePlan } from "@/src/api/scheduleApi";
 import { buildOrderProgressMap, getDefaultOrderProgress, groupOrdersByCustomer, type OrderProgress } from "@/src/services/orderService";
 import type { InspectionRecord, Order, ReinspectionRecord } from "@/lib/types";
-import { ArrowRight, BriefcaseBusiness, ChevronLeft, FileText, PackageCheck, Plus, RefreshCw, ScanLine, Settings2, Truck } from "lucide-react";
+import { ArrowRight, BriefcaseBusiness, CalendarDays, ChevronLeft, FileText, PackageCheck, Plus, RefreshCw, ScanLine, Settings2, Truck, X } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -40,6 +41,7 @@ export default function OrdersPage() {
   const [loading, setLoading] = useState(true);
   const [selectedCustomerName, setSelectedCustomerName] = useState<string | null>(null);
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
+  const [scheduleOrderId, setScheduleOrderId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -186,6 +188,10 @@ export default function OrdersPage() {
             <FileText size={18} />
             {t("report")}
           </Link>
+          <button type="button" onClick={() => setScheduleOrderId(order.id)} className="secondary-btn">
+            <CalendarDays size={18} />
+            检品计划
+          </button>
         </div>
       </article>
     );
@@ -304,6 +310,121 @@ export default function OrdersPage() {
       {!loading && orders.length > 0 && !selectedCustomerName && renderCustomerList()}
       {!loading && orders.length > 0 && selectedCustomerName && !selectedOrderId && renderOrderSummaryList()}
       {!loading && selectedOrder && renderOrderDetail(selectedOrder)}
+
+      {scheduleOrderId && <OrderScheduleModal orderId={scheduleOrderId} onClose={() => setScheduleOrderId(null)} />}
+    </div>
+  );
+}
+
+function OrderScheduleModal({ orderId, onClose }: { orderId: string; onClose: () => void }) {
+  const [data, setData] = useState<{
+    order: Order | null;
+    summary: {
+      remainingPlanned: number;
+      projectedDate: string | null;
+      riskLevel: string;
+      targetDate: string | null;
+      latestAcceptable: string | null;
+      perDate: Array<{ date: string; quantity: number; completed: number; urgent: boolean }>;
+    };
+    tasks: Array<{ scheduled_date: string; team_name: string | null; status: string; planned_quantity: number }>;
+  } | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    getOrderSchedulePlan(orderId).then(({ data: result, error }) => {
+      setLoading(false);
+      if (!error && result) {
+        setData({
+          order: (result.order as Order) ?? null,
+          summary: result.summary,
+          tasks: (result.tasks ?? []).map((task) => ({
+            scheduled_date: task.scheduled_date,
+            team_name: task.teamName,
+            status: task.status,
+            planned_quantity: task.planned_quantity
+          }))
+        });
+      }
+    });
+  }, [orderId]);
+
+  const riskLabels: Record<string, { text: string; className: string }> = {
+    green: { text: "正常", className: "bg-emerald-100 text-emerald-700" },
+    yellow: { text: "黄色预警", className: "bg-yellow-100 text-yellow-700" },
+    red: { text: "红色预警", className: "bg-red-100 text-red-700" },
+    overload: { text: "超负荷", className: "bg-purple-100 text-purple-700" }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className="max-h-[85vh] w-full max-w-2xl space-y-3 overflow-y-auto rounded bg-white p-5 shadow-xl" onClick={(event) => event.stopPropagation()}>
+        <div className="flex items-center justify-between gap-3">
+          <h3 className="text-lg font-black text-blue-950">订单检品计划</h3>
+          <button type="button" onClick={onClose} className="icon-btn" aria-label="关闭">
+            <X size={18} />
+          </button>
+        </div>
+        {loading && <p className="text-sm text-slate-500">正在加载...</p>}
+        {!loading && data && (
+          <>
+            <p className="text-sm font-bold text-slate-600">
+              {data.order?.po_number ?? "-"} · {data.order?.customer_name ?? "-"} · 总数 {data.order?.quantity ?? "-"} 双
+            </p>
+            <div className="grid grid-cols-2 gap-2 text-sm md:grid-cols-4">
+              <div className="rounded border border-line bg-blue-50 p-2">
+                <p className="text-xs font-bold text-slate-500">剩余待排</p>
+                <p className="font-black">{data.summary.remainingPlanned.toLocaleString()}</p>
+              </div>
+              <div className="rounded border border-line bg-blue-50 p-2">
+                <p className="text-xs font-bold text-slate-500">目标完成（提前7个工作日）</p>
+                <p className="font-black">{data.summary.targetDate ?? "-"}</p>
+              </div>
+              <div className="rounded border border-line bg-blue-50 p-2">
+                <p className="text-xs font-bold text-slate-500">当前预计完成</p>
+                <p className="font-black">{data.summary.projectedDate ?? "-"}</p>
+              </div>
+              <div className="rounded border border-line bg-blue-50 p-2">
+                <p className="text-xs font-bold text-slate-500">风险等级</p>
+                <span className={`mt-0.5 inline-block rounded px-1.5 py-0.5 text-[11px] font-black ${riskLabels[data.summary.riskLevel]?.className ?? "bg-emerald-100 text-emerald-700"}`}>
+                  {riskLabels[data.summary.riskLevel]?.text ?? "正常"}
+                </span>
+              </div>
+            </div>
+            <div className="rounded border border-line bg-blue-50/60 p-3">
+              <p className="mb-2 font-black text-blue-950">每日检品计划</p>
+              <div className="space-y-1">
+                {data.summary.perDate.map((row) => (
+                  <div key={row.date} className="flex items-center justify-between rounded bg-white px-3 py-2 text-sm">
+                    <span className="font-black">{row.date}</span>
+                    <span className="flex items-center gap-2">
+                      {row.urgent && <span className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-black text-red-700">紧急</span>}
+                      <span className="font-black">{row.quantity.toLocaleString()} 双</span>
+                      <span className="text-xs text-emerald-700">已完成 {row.completed.toLocaleString()}</span>
+                    </span>
+                  </div>
+                ))}
+                {data.summary.perDate.length === 0 && <p className="text-sm text-slate-500">该订单暂无排程任务。</p>}
+              </div>
+            </div>
+            <div className="rounded border border-line bg-blue-50/60 p-3">
+              <p className="mb-2 font-black text-blue-950">任务明细（{data.tasks.length}）</p>
+              <div className="space-y-1">
+                {data.tasks.map((task) => (
+                  <div key={task.scheduled_date + task.team_name} className="flex flex-wrap items-center justify-between gap-2 rounded bg-white px-3 py-2 text-sm">
+                    <span className="font-black">{task.scheduled_date} · {task.team_name ?? "-"}</span>
+                    <span className="flex items-center gap-2">
+                      <span className="rounded bg-slate-100 px-2 py-0.5 text-xs font-black text-slate-700">{task.status}</span>
+                      <span className="font-black">{task.planned_quantity.toLocaleString()} 双</span>
+                    </span>
+                  </div>
+                ))}
+                {data.tasks.length === 0 && <p className="text-sm text-slate-500">暂无任务。</p>}
+              </div>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }

@@ -62,3 +62,13 @@ export function businessDaysBetween(fromKey: string, toKey: string, calendar: Re
   }
   return count;
 }
+
+export function workdaysBefore(dateKey: string, count: number, calendar: Record<string, CalendarDay>): string {
+  let date = dateKey;
+  let remaining = Math.max(0, count);
+  while (remaining > 0) {
+    date = addDays(date, -1);
+    if (isWorkDay(date, calendar)) remaining -= 1;
+  }
+  return date;
+}

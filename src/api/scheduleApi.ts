@@ -31,6 +31,22 @@ export function getScheduleTask(taskId: string) {
   return apiRequest<{ task: InspectionScheduleTask; progress: ScheduleProgressRecord[] }>(`/api/schedule/tasks/${taskId}`);
 }
 
+export function getOrderSchedulePlan(orderId: string) {
+  return apiRequest<{
+    order: unknown;
+    items: unknown[];
+    tasks: Array<InspectionScheduleTask & { teamName: string | null; progressCount: number; riskLevel: string }>;
+    summary: {
+      remainingPlanned: number;
+      projectedDate: string | null;
+      riskLevel: string;
+      targetDate: string | null;
+      latestAcceptable: string | null;
+      perDate: Array<{ date: string; quantity: number; completed: number; urgent: boolean }>;
+    };
+  }>(`/api/schedule/orders/${orderId}`);
+}
+
 export function adjustScheduleTask(
   taskId: string,
   payload: {
@@ -58,6 +74,13 @@ export function runAutoSchedule(reason?: string) {
     unassigned: unknown[];
     warnings: unknown[];
     taskCount: number;
+    skipSummary?: {
+      directShipOrders: number;
+      pendingItems: number;
+      pausedItems: number;
+      noSubmittableQuantity: number;
+      totalUnits: number;
+    };
   }>("/api/schedule/plan/run", { method: "POST", body: JSON.stringify({ reason }) });
 }
 

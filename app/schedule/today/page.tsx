@@ -22,10 +22,10 @@ type TeamGroup = {
 };
 
 const RISK_LABELS: Record<string, { text: string; className: string }> = {
-  red: { text: "延期风险", className: "bg-red-100 text-red-700" },
-  orange: { text: "送货预警", className: "bg-orange-100 text-orange-700" },
-  yellow: { text: "产能紧张", className: "bg-yellow-100 text-yellow-700" },
-  green: { text: "正常", className: "bg-emerald-100 text-emerald-700" }
+  green: { text: "正常", className: "bg-emerald-100 text-emerald-700" },
+  yellow: { text: "黄色预警", className: "bg-yellow-100 text-yellow-700" },
+  red: { text: "红色预警", className: "bg-red-100 text-red-700" },
+  overload: { text: "超负荷", className: "bg-purple-100 text-purple-700" }
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -67,7 +67,18 @@ export default function ScheduleTodayPage() {
     load();
   }, [date]);
 
-  const totalDifference = useMemo(() => (metrics ? metrics.planned - metrics.completed : 0), [metrics]);
+const totalDifference = useMemo(() => (metrics ? metrics.planned - metrics.completed : 0), [metrics]);
+const emergencyTasks = useMemo(() => {
+  const rows: TodayTaskRow[] = [];
+  for (const group of groups) {
+    for (const row of group.tasks) {
+      const explanation = (row.task.explanation ?? {}) as Record<string, unknown>;
+      const urgency = explanation.urgency;
+      if (urgency === "P0" || urgency === "P1" || row.task.priority === "特急") rows.push(row);
+    }
+  }
+  return rows;
+}, [groups]);
 
   async function submitCheckIn() {
     if (!checkInTask) return;
@@ -98,6 +109,10 @@ export default function ScheduleTodayPage() {
   function renderExplanation(row: TodayTaskRow) {
     const explanation = (row.task.explanation ?? {}) as {
       deadlineChain?: { earliest: string | null; preferred: string | null; hard: string | null };
+      targetDate?: string | null;
+      latestAcceptable?: string | null;
+      urgency?: string;
+      overload?: boolean;
       remainingQty?: number;
       workdaysRemaining?: number | null;
       teamDailyCapacity?: number;
@@ -111,6 +126,7 @@ export default function ScheduleTodayPage() {
     const reasonCodes = (explanation.reasonCodes ?? []) as string[];
     const reasonLabels: Record<string, string> = {
       deadline_driven: "按 Deadline 倒排",
+      compressed: "时间紧迫压缩排班",
       capacity_split: "当日产能不足拆分",
       earliest_start: "到达最早可检日期",
       arrival_limited: "受实际可送检数量限制",
@@ -146,6 +162,20 @@ export default function ScheduleTodayPage() {
           <div>
             <dt className="text-xs font-bold text-slate-500">剩余工作日</dt>
             <dd className="font-black">{explanation.workdaysRemaining ?? "-"}</dd>
+          </div>
+          <div>
+            <dt className="text-xs font-bold text-slate-500">目标完成日（提前7个工作日）</dt>
+            <dd className="font-black">{explanation.targetDate ?? "-"}</dd>
+          </div>
+          <div>
+            <dt className="text-xs font-bold text-slate-500">最晚完成日（送货前1工作日）</dt>
+            <dd className="font-black">{explanation.latestAcceptable ?? "-"}</dd>
+          </div>
+          <div>
+            <dt className="text-xs font-bold text-slate-500">紧急级别</dt>
+            <dd className="font-black">
+              {explanation.urgency ?? "-"}{explanation.overload ? " · 超负荷" : ""}
+            </dd>
           </div>
           <div>
             <dt className="text-xs font-bold text-slate-500">班组日产能(标准单位)</dt>
@@ -239,6 +269,49 @@ export default function ScheduleTodayPage() {
                   {warning}
                 </p>
               ))}
+            </section>
+          )}
+
+          {emergencyTasks.length > 0 && (
+            <section className="panel overflow-hidden border-red-200">
+              <div className="flex items-center justify-between gap-3 border-b border-red-100 bg-red-50 px-4 py-3">
+                <h2 className="font-black text-red-700">今日紧急检品</h2>
+                <p className="text-xs font-bold text-red-600">当天/明天送货或特急订单，应优先安排</p>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[680px] text-sm">
+                  <thead>
+                    <tr className="border-b border-line bg-slate-50 text-left text-xs font-black text-slate-500">
+                      <th className="px-3 py-2">订单</th>
+                      <th className="px-3 py-2">款号</th>
+                      <th className="px-3 py-2">颜色/尺码</th>
+                      <th className="px-3 py-2 text-right">计划</th>
+                      <th className="px-3 py-2">班组</th>
+                      <th className="px-3 py-2">紧急级别</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {emergencyTasks.map((row) => {
+                      const explanation = (row.task.explanation ?? {}) as Record<string, unknown>;
+                      const teamName = groups.find((group) => group.tasks.includes(row))?.teamName ?? "-";
+                      return (
+                        <tr key={row.task.id} className="border-b border-line last:border-0">
+                          <td className="px-3 py-2 font-black">{row.order?.po_number ?? row.task.order_id}</td>
+                          <td className="px-3 py-2">{row.item?.sku ?? row.order?.sku ?? "-"}</td>
+                          <td className="px-3 py-2">{row.item?.color ?? "-"} / {row.item?.size ?? "-"}</td>
+                          <td className="px-3 py-2 text-right font-black">{row.task.planned_quantity.toLocaleString()}</td>
+                          <td className="px-3 py-2">{teamName}</td>
+                          <td className="px-3 py-2">
+                            <span className="rounded bg-red-100 px-2 py-0.5 text-xs font-black text-red-700">
+                              {String(explanation.urgency ?? "-")}{explanation.overload ? " · 超负荷" : ""}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </section>
           )}
 

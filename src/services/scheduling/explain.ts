@@ -1,5 +1,5 @@
 import { businessDaysBetween, diffCalendarDays } from "./calendar.ts";
-import type { CalendarDay, RiskLevel, ScheduleUnit, TaskExplanation, Team } from "./types.ts";
+import type { CalendarDay, RiskLevel, ScheduleUnit, TaskExplanation, Team, UrgencyLevel } from "./types.ts";
 
 export function buildTaskExplanation(input: {
   unit: ScheduleUnit;
@@ -10,8 +10,12 @@ export function buildTaskExplanation(input: {
   today: string;
   calendar: Record<string, CalendarDay>;
   capacityUnits: number;
+  targetDate: string | null;
+  latestAcceptable: string | null;
+  urgency: UrgencyLevel;
+  overload: boolean;
 }): TaskExplanation {
-  const { unit, team, reasonCodes, projectedDate, riskLevel, today, calendar, capacityUnits } = input;
+  const { unit, team, reasonCodes, projectedDate, riskLevel, today, calendar, capacityUnits, targetDate, latestAcceptable, urgency, overload } = input;
   const hard = unit.hardDeadline ?? unit.preferredDeadline;
 
   return {
@@ -20,6 +24,10 @@ export function buildTaskExplanation(input: {
       preferred: unit.preferredDeadline,
       hard
     },
+    targetDate,
+    latestAcceptable,
+    urgency,
+    overload,
     remainingQty: Math.max(0, unit.quantity - unit.inspectedCompleted),
     workdaysRemaining: projectedDate ? businessDaysBetween(today, projectedDate, calendar) : null,
     teamDailyCapacity: Math.round(capacityUnits * 100) / 100,
