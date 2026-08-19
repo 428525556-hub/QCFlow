@@ -5,7 +5,7 @@ import { type Language, useLanguage } from "@/components/LanguageProvider";
 import { isAdminEmail } from "@/lib/security";
 import { getCurrentUser, signOut as signOutUser } from "@/src/api/userApi";
 import { clsx } from "clsx";
-import { BriefcaseBusiness, CalendarDays, Eye, Home, Languages, ListChecks, LogOut, ShieldCheck } from "lucide-react";
+import { BriefcaseBusiness, CalendarClock, Eye, Home, Languages, ListChecks, LogOut, ShieldCheck } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -15,7 +15,7 @@ const staffNav = [
   { href: "/", labelKey: "navHome", icon: Home },
   { href: "/workbench", labelKey: "navWorkbench", icon: BriefcaseBusiness },
   { href: "/orders", labelKey: "navOrders", icon: ListChecks },
-  { href: "/calendar", labelKey: "navCalendar", icon: CalendarDays }
+  { href: "/schedule/today", labelKey: "navSchedule", icon: CalendarClock }
 ];
 
 const languageLabels: Record<Language, string> = {
@@ -45,6 +45,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         { href: "/", labelKey: "navHome", icon: Home },
         { href: "/workbench", labelKey: "navWorkbench", icon: BriefcaseBusiness },
         { href: "/orders", labelKey: "navOrders", icon: ListChecks },
+        { href: "/schedule/today", labelKey: "navSchedule", icon: CalendarClock },
         { href: "/admin/invites", labelKey: "navAdmin", icon: ShieldCheck }
       ];
     }

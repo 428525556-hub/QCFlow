@@ -16,6 +16,14 @@ export async function requireStaffProfile(request: NextRequest) {
   return result;
 }
 
+export async function requireAdminProfile(request: NextRequest) {
+  const result = await requireRequestProfile(request);
+  if (result.profile.role !== "admin" && result.user.email !== ADMIN_EMAIL) {
+    throw new ApiError("Forbidden", 403, "FORBIDDEN");
+  }
+  return result;
+}
+
 export function getBearerToken(request: NextRequest) {
   const authorization = request.headers.get("authorization");
   if (!authorization?.startsWith("Bearer ")) return null;

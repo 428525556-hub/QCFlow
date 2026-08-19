@@ -587,3 +587,118 @@ drop policy if exists "users can view order attachments" on storage.objects;
 create policy "users can view order attachments"
 on storage.objects for select
 using (bucket_id = 'order-attachments');
+
+-- ============ 自动检品排程模块 ============
+-- 规则：排程相关数据仅 staff/admin 可读；班组/款式/日历配置仅 admin 可写；
+--       排程任务的批量写操作全部走事务函数（SECURITY DEFINER），不开放直接写
+
+-- ============ inspection_teams ============
+drop policy if exists "staff can read inspection teams" on public.inspection_teams;
+create policy "staff can read inspection teams"
+on public.inspection_teams for select
+using (
+  (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
+  or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role in ('admin', 'staff'))
+);
+
+drop policy if exists "admin can manage inspection teams" on public.inspection_teams;
+create policy "admin can manage inspection teams"
+on public.inspection_teams for all
+using (
+  (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
+  or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role = 'admin')
+)
+with check (
+  (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
+  or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role = 'admin')
+);
+
+-- ============ style_categories ============
+drop policy if exists "staff can read style categories" on public.style_categories;
+create policy "staff can read style categories"
+on public.style_categories for select
+using (
+  (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
+  or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role in ('admin', 'staff'))
+);
+
+drop policy if exists "admin can manage style categories" on public.style_categories;
+create policy "admin can manage style categories"
+on public.style_categories for all
+using (
+  (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
+  or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role = 'admin')
+)
+with check (
+  (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
+  or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role = 'admin')
+);
+
+-- ============ production_calendar ============
+drop policy if exists "staff can read production calendar" on public.production_calendar;
+create policy "staff can read production calendar"
+on public.production_calendar for select
+using (
+  (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
+  or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role in ('admin', 'staff'))
+);
+
+drop policy if exists "admin can manage production calendar" on public.production_calendar;
+create policy "admin can manage production calendar"
+on public.production_calendar for all
+using (
+  (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
+  or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role = 'admin')
+)
+with check (
+  (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
+  or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role = 'admin')
+);
+
+-- ============ team_work_exceptions ============
+drop policy if exists "staff can read team work exceptions" on public.team_work_exceptions;
+create policy "staff can read team work exceptions"
+on public.team_work_exceptions for select
+using (
+  (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
+  or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role in ('admin', 'staff'))
+);
+
+drop policy if exists "admin can manage team work exceptions" on public.team_work_exceptions;
+create policy "admin can manage team work exceptions"
+on public.team_work_exceptions for all
+using (
+  (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
+  or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role = 'admin')
+)
+with check (
+  (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
+  or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role = 'admin')
+);
+
+-- ============ inspection_schedule ============
+drop policy if exists "staff can read inspection schedule" on public.inspection_schedule;
+create policy "staff can read inspection schedule"
+on public.inspection_schedule for select
+using (
+  (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
+  or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role in ('admin', 'staff'))
+);
+
+-- ============ schedule_progress_records ============
+drop policy if exists "staff can read schedule progress" on public.schedule_progress_records;
+create policy "staff can read schedule progress"
+on public.schedule_progress_records for select
+using (
+  (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
+  or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role in ('admin', 'staff'))
+);
+
+-- ============ schedule_change_logs ============
+drop policy if exists "admin can read schedule change logs" on public.schedule_change_logs;
+create policy "admin can read schedule change logs"
+on public.schedule_change_logs for select
+using (
+  (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
+  or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role = 'admin')
+);

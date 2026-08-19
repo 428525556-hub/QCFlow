@@ -4,7 +4,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { useCurrentProfile, useCurrentUser } from "@/components/AuthGuard";
 import { ADMIN_EMAIL } from "@/lib/security";
 import { ORDER_STATUSES } from "@/src/constants";
-import type { InspectionPlan, Order, OrderItem, OrderStatus } from "@/lib/types";
+import type { InspectionPlan, Order, OrderItem, OrderStatus, SubmitStatus } from "@/lib/types";
 import { deleteOrder as deleteOrderById, deleteOrderItems, getOrdersWithItems, insertOrderItems, restoreOrder as restoreOrderById, softDeleteOrder, syncOrderItemIdentity, updateOrder, updateOrderItem } from "@/src/api/ordersApi";
 import { Archive, ChevronDown, ChevronRight, Plus, RotateCcw, Save, ShieldAlert, Trash2, Truck, Undo2 } from "lucide-react";
 import Link from "next/link";
@@ -23,6 +23,9 @@ type EditableItem = {
   size: string;
   quantity: string;
   inbound_quantity: string;
+  submitted_quantity: string;
+  submit_status: SubmitStatus;
+  style_factor: string;
 };
 
 type EditableOrder = {
@@ -60,7 +63,10 @@ function newDraftItem(order: OrderWithItems): EditableItem {
     color: order.color || "",
     size: order.size || "",
     quantity: "0",
-    inbound_quantity: "0"
+    inbound_quantity: "0",
+    submitted_quantity: "0",
+    submit_status: "pending",
+    style_factor: "1"
   };
 }
 
@@ -73,7 +79,10 @@ function buildDraft(order: OrderWithItems): EditableOrder {
         color: item.color || "",
         size: item.size || "",
         quantity: String(item.quantity || 0),
-        inbound_quantity: String(item.inbound_quantity || 0)
+        inbound_quantity: String(item.inbound_quantity || 0),
+        submitted_quantity: String(item.submitted_quantity ?? 0),
+        submit_status: item.submit_status ?? "pending",
+        style_factor: String(item.style_factor ?? 1)
       }))
     : [newDraftItem(order)];
 
@@ -242,6 +251,7 @@ export default function ManageOrdersPage() {
     const cleanItems = draft.items.map((item) => {
       const quantity = toNumber(item.quantity);
       const inboundQuantity = Math.min(toNumber(item.inbound_quantity), quantity);
+      const submittedQuantity = Math.min(toNumber(item.submitted_quantity), quantity);
       return {
         ...item,
         po_number: item.po_number.trim(),
@@ -249,7 +259,9 @@ export default function ManageOrdersPage() {
         color: item.color.trim(),
         size: item.size.trim(),
         quantity,
-        inbound_quantity: inboundQuantity
+        inbound_quantity: inboundQuantity,
+        submitted_quantity: submittedQuantity,
+        style_factor: Number(item.style_factor) > 0 ? Number(item.style_factor) : 1
       };
     });
 
@@ -277,7 +289,10 @@ export default function ManageOrdersPage() {
         color: item.color || "鏈畾",
         size: item.size || "鏈畾",
         quantity: item.quantity,
-        inbound_quantity: item.inbound_quantity
+        inbound_quantity: item.inbound_quantity,
+        submitted_quantity: item.submitted_quantity,
+        submit_status: item.submit_status,
+        style_factor: item.style_factor
       };
 
       if (item.isNew) {
@@ -540,6 +555,34 @@ export default function ManageOrdersPage() {
                         value={item.inbound_quantity}
                         onChange={(event) => patchItem(order.id, item.id, { inbound_quantity: event.target.value })}
                         placeholder="已入双数"
+                      />
+                    </div>
+                    <div className="mt-2 grid grid-cols-3 gap-2">
+                      <input
+                        type="number"
+                        min="0"
+                        className="field"
+                        value={item.submitted_quantity}
+                        onChange={(event) => patchItem(order.id, item.id, { submitted_quantity: event.target.value })}
+                        placeholder="送检双数"
+                      />
+                      <select
+                        className="field"
+                        value={item.submit_status}
+                        onChange={(event) => patchItem(order.id, item.id, { submit_status: event.target.value as SubmitStatus })}
+                      >
+                        <option value="pending">待送检</option>
+                        <option value="ready">可送检</option>
+                        <option value="paused">暂停送检</option>
+                      </select>
+                      <input
+                        type="number"
+                        min="0.1"
+                        step="0.1"
+                        className="field"
+                        value={item.style_factor}
+                        onChange={(event) => patchItem(order.id, item.id, { style_factor: event.target.value })}
+                        placeholder="款式系数"
                       />
                     </div>
                   </div>

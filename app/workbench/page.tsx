@@ -6,8 +6,11 @@ import { isAdminEmail } from "@/lib/security";
 import {
   Archive,
   BriefcaseBusiness,
+  CalendarClock,
+  CalendarRange,
   CalendarDays,
   ClipboardList,
+  Factory,
   FileText,
   PackageOpen,
   PackageCheck,
@@ -28,6 +31,16 @@ const groups = [
     actions: [
       { href: "/reservations/new", labelKey: "reservationInspection", icon: PackageSearch },
       { href: "/calendar", labelKey: "shippingCalendar", icon: CalendarDays }
+    ]
+  },
+  {
+    titleKey: "scheduling",
+    roleKey: "schedulingRole",
+    descriptionKey: "schedulingDesc",
+    actions: [
+      { href: "/schedule/today", labelKey: "scheduleToday", icon: CalendarClock },
+      { href: "/schedule/plan", labelKey: "schedulePlan", icon: CalendarRange },
+      { href: "/schedule/teams", labelKey: "scheduleTeams", icon: Factory }
     ]
   },
   {

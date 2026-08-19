@@ -4,6 +4,9 @@ export type OrderStatus = "未开始" | "检品中" | "已完成";
 
 export type InspectionStage = "normal" | "xray" | "field";
 export type InspectionPlan = "normal" | "xray" | "both" | "field";
+export type SubmitStatus = "pending" | "ready" | "paused";
+export type SchedulePriority = "普通" | "加急" | "特急";
+export type ScheduleTaskStatus = "待开始" | "进行中" | "已完成" | "部分完成" | "延期" | "已取消" | "已调整";
 
 export type DefectType = string;
 
@@ -40,6 +43,11 @@ export type Order = {
   size: string;
   quantity: number;
   inbound_quantity: number;
+  delivery_date: string | null;
+  estimated_inspection_date: string | null;
+  inspection_standard: string | null;
+  priority: SchedulePriority;
+  assigned_team_id: string | null;
   status: OrderStatus;
 };
 
@@ -56,6 +64,10 @@ export type OrderItem = {
   quantity_per_carton: number;
   quantity: number;
   inbound_quantity: number;
+  estimated_inspection_date: string | null;
+  submitted_quantity: number;
+  submit_status: SubmitStatus;
+  style_factor: number;
 };
 
 export type ReservationCarton = {
@@ -181,6 +193,98 @@ export type ReinspectionRecord = {
   remark: string | null;
 };
 
+export type InspectionTeam = {
+  id: string;
+  created_at: string;
+  updated_at: string;
+  name: string;
+  work_start_time: string | null;
+  work_end_time: string | null;
+  daily_hours: number;
+  standard_daily_capacity: number;
+  baseline_members: number;
+  current_members: number;
+  max_daily_capacity: number;
+  inspection_types: string[];
+  capacity_factors: Record<string, number>;
+  enabled: boolean;
+  sort_order: number;
+};
+
+export type StyleCategory = {
+  id: string;
+  created_at: string;
+  name: string;
+  factor: number;
+  remark: string | null;
+  enabled: boolean;
+};
+
+export type ProductionCalendarEntry = {
+  id: string;
+  created_at: string;
+  date: string;
+  is_work_day: boolean;
+  work_hours: number | null;
+  remark: string | null;
+};
+
+export type TeamWorkException = {
+  id: string;
+  created_at: string;
+  team_id: string;
+  date: string;
+  is_working: boolean;
+  work_hours: number | null;
+  capacity_factor: number | null;
+  remark: string | null;
+};
+
+export type InspectionScheduleTask = {
+  id: string;
+  created_at: string;
+  updated_at: string;
+  order_id: string;
+  order_item_id: string | null;
+  inspection_type: InspectionStage;
+  scheduled_date: string;
+  team_id: string | null;
+  planned_quantity: number;
+  priority: SchedulePriority;
+  status: ScheduleTaskStatus;
+  source: "auto" | "manual";
+  locked: boolean;
+  run_id: string | null;
+  completed_quantity: number;
+  explanation: Record<string, unknown> | null;
+  remark: string | null;
+};
+
+export type ScheduleProgressRecord = {
+  id: string;
+  created_at: string;
+  task_id: string;
+  user_id: string | null;
+  user_email: string | null;
+  quantity: number;
+  record_date: string;
+  remark: string | null;
+};
+
+export type ScheduleChangeLog = {
+  id: string;
+  created_at: string;
+  user_id: string | null;
+  user_email: string | null;
+  action: string;
+  run_id: string | null;
+  order_id: string | null;
+  order_item_id: string | null;
+  reason: string | null;
+  before_data: Record<string, unknown> | null;
+  after_data: Record<string, unknown> | null;
+};
+
 export type RegistrationInvite = {
   id: string;
   created_at: string;
@@ -207,17 +311,30 @@ export type Database = {
       };
       orders: {
         Row: Order;
-        Insert: Omit<Order, "id" | "created_at" | "deleted_at"> & { id?: string; created_at?: string; deleted_at?: string | null };
+        Insert: Omit<Order, "id" | "created_at" | "deleted_at" | "delivery_date" | "estimated_inspection_date" | "inspection_standard" | "priority" | "assigned_team_id"> & {
+          id?: string;
+          created_at?: string;
+          deleted_at?: string | null;
+          delivery_date?: string | null;
+          estimated_inspection_date?: string | null;
+          inspection_standard?: string | null;
+          priority?: SchedulePriority;
+          assigned_team_id?: string | null;
+        };
         Update: Partial<Omit<Order, "id" | "created_at" | "user_id">>;
         Relationships: [];
       };
       order_items: {
         Row: OrderItem;
-        Insert: Omit<OrderItem, "id" | "created_at" | "carton_count" | "quantity_per_carton"> & {
+        Insert: Omit<OrderItem, "id" | "created_at" | "carton_count" | "quantity_per_carton" | "estimated_inspection_date" | "submitted_quantity" | "submit_status" | "style_factor"> & {
           id?: string;
           created_at?: string;
           carton_count?: number;
           quantity_per_carton?: number;
+          estimated_inspection_date?: string | null;
+          submitted_quantity?: number;
+          submit_status?: SubmitStatus;
+          style_factor?: number;
         };
         Update: Partial<Omit<OrderItem, "id" | "created_at" | "user_id">>;
         Relationships: [];
@@ -295,12 +412,84 @@ export type Database = {
         Update: Partial<Omit<RegistrationInvite, "id" | "created_at" | "code_hash">>;
         Relationships: [];
       };
+      inspection_teams: {
+        Row: InspectionTeam;
+        Insert: Omit<InspectionTeam, "id" | "created_at" | "updated_at"> & {
+          id?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Omit<InspectionTeam, "id" | "created_at">>;
+        Relationships: [];
+      };
+      style_categories: {
+        Row: StyleCategory;
+        Insert: Omit<StyleCategory, "id" | "created_at"> & { id?: string; created_at?: string };
+        Update: Partial<Omit<StyleCategory, "id" | "created_at">>;
+        Relationships: [];
+      };
+      production_calendar: {
+        Row: ProductionCalendarEntry;
+        Insert: Omit<ProductionCalendarEntry, "id" | "created_at"> & { id?: string; created_at?: string };
+        Update: Partial<Omit<ProductionCalendarEntry, "id" | "created_at">>;
+        Relationships: [];
+      };
+      team_work_exceptions: {
+        Row: TeamWorkException;
+        Insert: Omit<TeamWorkException, "id" | "created_at"> & { id?: string; created_at?: string };
+        Update: Partial<Omit<TeamWorkException, "id" | "created_at">>;
+        Relationships: [];
+      };
+      inspection_schedule: {
+        Row: InspectionScheduleTask;
+        Insert: Omit<InspectionScheduleTask, "id" | "created_at" | "updated_at" | "completed_quantity" | "status"> & {
+          id?: string;
+          created_at?: string;
+          updated_at?: string;
+          completed_quantity?: number;
+          status?: ScheduleTaskStatus;
+        };
+        Update: Partial<Omit<InspectionScheduleTask, "id" | "created_at" | "updated_at">>;
+        Relationships: [];
+      };
+      schedule_progress_records: {
+        Row: ScheduleProgressRecord;
+        Insert: Omit<ScheduleProgressRecord, "id" | "created_at"> & { id?: string; created_at?: string };
+        Update: Partial<Omit<ScheduleProgressRecord, "id" | "created_at">>;
+        Relationships: [];
+      };
+      schedule_change_logs: {
+        Row: ScheduleChangeLog;
+        Insert: Omit<ScheduleChangeLog, "id" | "created_at"> & { id?: string; created_at?: string };
+        Update: Partial<Omit<ScheduleChangeLog, "id" | "created_at">>;
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: {
       create_order_with_items: {
         Args: { order_payload: Json; item_payload: Json };
         Returns: string;
+      };
+      apply_schedule_run: {
+        Args: { payload: Json };
+        Returns: Json;
+      };
+      record_schedule_progress: {
+        Args: { payload: Json };
+        Returns: Json;
+      };
+      apply_manual_adjust: {
+        Args: { payload: Json };
+        Returns: Json;
+      };
+      apply_schedule_insert: {
+        Args: { payload: Json };
+        Returns: Json;
+      };
+      rollover_schedule: {
+        Args: { payload: Json };
+        Returns: Json;
       };
     };
     Enums: Record<string, never>;

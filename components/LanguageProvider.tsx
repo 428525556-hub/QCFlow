@@ -14,6 +14,7 @@ const dictionary: Dictionary = {
   navWorkbench: { zh: "工作台", en: "Work", ja: "作業台" },
   navOrders: { zh: "订单", en: "Orders", ja: "注文" },
   navCalendar: { zh: "日历", en: "Calendar", ja: "日程" },
+  navSchedule: { zh: "排程", en: "Schedule", ja: "スケジュール" },
   navClient: { zh: "客户", en: "Client", ja: "顧客" },
   navField: { zh: "出差", en: "Field", ja: "出張" },
   navAdmin: { zh: "权限", en: "Access", ja: "権限" },
@@ -112,7 +113,17 @@ const dictionary: Dictionary = {
   xray: { zh: "X光", en: "X-ray", ja: "X線" },
   recheck: { zh: "二检", en: "Recheck", ja: "二検" },
   shipping: { zh: "出库", en: "Ship", ja: "出庫" },
-  report: { zh: "报告", en: "Report", ja: "報告" }
+  report: { zh: "报告", en: "Report", ja: "報告" },
+  scheduling: { zh: "排程排产", en: "Scheduling", ja: "スケジュール" },
+  schedulingRole: { zh: "计划 / 排程", en: "Planning / Scheduling", ja: "計画 / スケジュール" },
+  schedulingDesc: {
+    zh: "自动计算每日检品计划、班组产能与延期风险，支持人工调整、锁定和紧急插单。",
+    en: "Auto-generate daily inspection plans with capacity and deadline risk, plus manual adjustments, locking, and urgent inserts.",
+    ja: "毎日の検品計画・生産能力・納期リスクを自動計算し、手動調整・ロック・緊急挿入に対応します。"
+  },
+  scheduleToday: { zh: "今日检品计划", en: "Today's Plan", ja: "本日の検品計画" },
+  schedulePlan: { zh: "排程总览", en: "Schedule Overview", ja: "スケジュール一覧" },
+  scheduleTeams: { zh: "班组产能管理", en: "Teams & Capacity", ja: "班・生産能力管理" }
 };
 
 type LanguageContextValue = {

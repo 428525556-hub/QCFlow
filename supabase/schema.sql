@@ -645,6 +645,267 @@ create policy "users can view order attachments"
 on storage.objects for select
 using (bucket_id = 'order-attachments');
 
+-- ============ 自动检品排程模块 ============
+-- 订单 / 明细扩展字段
+alter table public.orders
+  add column if not exists delivery_date date,
+  add column if not exists estimated_inspection_date date,
+  add column if not exists inspection_standard text,
+  add column if not exists priority text not null default '普通',
+  add column if not exists assigned_team_id uuid;
+
+alter table public.orders
+  drop constraint if exists orders_priority_check;
+alter table public.orders
+  add constraint orders_priority_check check (priority in ('普通', '加急', '特急'));
+
+alter table public.order_items
+  add column if not exists estimated_inspection_date date,
+  add column if not exists submitted_quantity integer not null default 0,
+  add column if not exists submit_status text not null default 'pending',
+  add column if not exists style_factor numeric not null default 1.0;
+
+alter table public.order_items
+  drop constraint if exists order_items_submitted_quantity_check;
+alter table public.order_items
+  add constraint order_items_submitted_quantity_check check (submitted_quantity >= 0);
+
+alter table public.order_items
+  drop constraint if exists order_items_submit_status_check;
+alter table public.order_items
+  add constraint order_items_submit_status_check check (submit_status in ('pending', 'ready', 'paused'));
+
+alter table public.order_items
+  drop constraint if exists order_items_style_factor_check;
+alter table public.order_items
+  add constraint order_items_style_factor_check check (style_factor > 0);
+
+-- 班组
+create table if not exists public.inspection_teams (
+  id uuid primary key default gen_random_uuid(),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  name text not null unique,
+  work_start_time time,
+  work_end_time time,
+  daily_hours numeric not null default 8 check (daily_hours > 0),
+  standard_daily_capacity integer not null check (standard_daily_capacity > 0),
+  baseline_members integer not null default 1 check (baseline_members > 0),
+  current_members integer not null default 0 check (current_members >= 0),
+  max_daily_capacity integer not null check (max_daily_capacity >= standard_daily_capacity),
+  inspection_types text[] not null default array['normal'],
+  capacity_factors jsonb not null default '{"normal":1,"xray":0.8,"field":0.7}'::jsonb,
+  enabled boolean not null default true,
+  sort_order integer not null default 0
+);
+
+alter table public.orders
+  drop constraint if exists orders_assigned_team_fk;
+alter table public.orders
+  add constraint orders_assigned_team_fk foreign key (assigned_team_id) references public.inspection_teams(id) on delete set null;
+
+-- 款式系数
+create table if not exists public.style_categories (
+  id uuid primary key default gen_random_uuid(),
+  created_at timestamptz not null default now(),
+  name text not null unique,
+  factor numeric not null check (factor > 0),
+  remark text,
+  enabled boolean not null default true
+);
+
+-- 公司工作日历
+create table if not exists public.production_calendar (
+  id uuid primary key default gen_random_uuid(),
+  created_at timestamptz not null default now(),
+  date date not null unique,
+  is_work_day boolean not null default true,
+  work_hours numeric check (work_hours is null or work_hours > 0),
+  remark text
+);
+
+-- 班组例外
+create table if not exists public.team_work_exceptions (
+  id uuid primary key default gen_random_uuid(),
+  created_at timestamptz not null default now(),
+  team_id uuid not null references public.inspection_teams(id) on delete cascade,
+  date date not null,
+  is_working boolean not null default true,
+  work_hours numeric check (work_hours is null or work_hours > 0),
+  capacity_factor numeric check (capacity_factor is null or capacity_factor > 0),
+  remark text,
+  unique (team_id, date)
+);
+
+-- 排程任务
+create table if not exists public.inspection_schedule (
+  id uuid primary key default gen_random_uuid(),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  order_id uuid not null references public.orders(id) on delete cascade,
+  order_item_id uuid references public.order_items(id) on delete cascade,
+  inspection_type text not null check (inspection_type in ('normal', 'xray', 'field')),
+  scheduled_date date not null,
+  team_id uuid references public.inspection_teams(id) on delete set null,
+  planned_quantity integer not null check (planned_quantity > 0),
+  priority text not null default '普通' check (priority in ('普通', '加急', '特急')),
+  status text not null default '待开始' check (status in ('待开始', '进行中', '已完成', '部分完成', '延期', '已取消', '已调整')),
+  source text not null default 'auto' check (source in ('auto', 'manual')),
+  locked boolean not null default false,
+  run_id uuid,
+  completed_quantity integer not null default 0 check (completed_quantity >= 0 and completed_quantity <= planned_quantity),
+  explanation jsonb,
+  remark text
+);
+
+-- 排程进度（实际完成，追加式）
+create table if not exists public.schedule_progress_records (
+  id uuid primary key default gen_random_uuid(),
+  created_at timestamptz not null default now(),
+  task_id uuid not null references public.inspection_schedule(id) on delete cascade,
+  user_id uuid references auth.users(id) on delete set null,
+  user_email text,
+  quantity integer not null check (quantity > 0),
+  record_date date not null default current_date,
+  remark text
+);
+
+-- 排程审计
+create table if not exists public.schedule_change_logs (
+  id uuid primary key default gen_random_uuid(),
+  created_at timestamptz not null default now(),
+  user_id uuid references auth.users(id) on delete set null,
+  user_email text,
+  action text not null check (action in ('auto_replan', 'manual_adjust', 'progress_update', 'lock', 'unlock', 'insert_urgent', 'rollover', 'cancel', 'submit_update')),
+  run_id uuid,
+  order_id uuid,
+  order_item_id uuid,
+  reason text,
+  before_data jsonb,
+  after_data jsonb
+);
+
+create index if not exists inspection_schedule_date_idx on public.inspection_schedule (scheduled_date);
+create index if not exists inspection_schedule_item_idx on public.inspection_schedule (order_item_id);
+create index if not exists inspection_schedule_team_date_idx on public.inspection_schedule (team_id, scheduled_date);
+create index if not exists inspection_schedule_status_idx on public.inspection_schedule (status);
+create index if not exists schedule_progress_records_task_idx on public.schedule_progress_records (task_id);
+create index if not exists schedule_change_logs_order_idx on public.schedule_change_logs (order_id);
+create index if not exists schedule_change_logs_run_idx on public.schedule_change_logs (run_id);
+create index if not exists schedule_change_logs_created_idx on public.schedule_change_logs (created_at);
+
+alter table public.inspection_teams enable row level security;
+alter table public.style_categories enable row level security;
+alter table public.production_calendar enable row level security;
+alter table public.team_work_exceptions enable row level security;
+alter table public.inspection_schedule enable row level security;
+alter table public.schedule_progress_records enable row level security;
+alter table public.schedule_change_logs enable row level security;
+
+drop policy if exists "staff can read inspection teams" on public.inspection_teams;
+create policy "staff can read inspection teams"
+on public.inspection_teams for select
+using (
+  (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
+  or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role in ('admin', 'staff'))
+);
+
+drop policy if exists "admin can manage inspection teams" on public.inspection_teams;
+create policy "admin can manage inspection teams"
+on public.inspection_teams for all
+using (
+  (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
+  or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role = 'admin')
+)
+with check (
+  (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
+  or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role = 'admin')
+);
+
+drop policy if exists "staff can read style categories" on public.style_categories;
+create policy "staff can read style categories"
+on public.style_categories for select
+using (
+  (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
+  or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role in ('admin', 'staff'))
+);
+
+drop policy if exists "admin can manage style categories" on public.style_categories;
+create policy "admin can manage style categories"
+on public.style_categories for all
+using (
+  (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
+  or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role = 'admin')
+)
+with check (
+  (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
+  or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role = 'admin')
+);
+
+drop policy if exists "staff can read production calendar" on public.production_calendar;
+create policy "staff can read production calendar"
+on public.production_calendar for select
+using (
+  (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
+  or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role in ('admin', 'staff'))
+);
+
+drop policy if exists "admin can manage production calendar" on public.production_calendar;
+create policy "admin can manage production calendar"
+on public.production_calendar for all
+using (
+  (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
+  or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role = 'admin')
+)
+with check (
+  (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
+  or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role = 'admin')
+);
+
+drop policy if exists "staff can read team work exceptions" on public.team_work_exceptions;
+create policy "staff can read team work exceptions"
+on public.team_work_exceptions for select
+using (
+  (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
+  or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role in ('admin', 'staff'))
+);
+
+drop policy if exists "admin can manage team work exceptions" on public.team_work_exceptions;
+create policy "admin can manage team work exceptions"
+on public.team_work_exceptions for all
+using (
+  (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
+  or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role = 'admin')
+)
+with check (
+  (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
+  or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role = 'admin')
+);
+
+drop policy if exists "staff can read inspection schedule" on public.inspection_schedule;
+create policy "staff can read inspection schedule"
+on public.inspection_schedule for select
+using (
+  (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
+  or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role in ('admin', 'staff'))
+);
+
+drop policy if exists "staff can read schedule progress" on public.schedule_progress_records;
+create policy "staff can read schedule progress"
+on public.schedule_progress_records for select
+using (
+  (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
+  or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role in ('admin', 'staff'))
+);
+
+drop policy if exists "admin can read schedule change logs" on public.schedule_change_logs;
+create policy "admin can read schedule change logs"
+on public.schedule_change_logs for select
+using (
+  (auth.jwt() ->> 'email') = 'shuoyuqc@163.com'
+  or exists (select 1 from public.user_profiles p where p.id = auth.uid() and p.role = 'admin')
+);
+
 -- Customer portal and role based access
 create table if not exists public.user_profiles (
   id uuid primary key references auth.users(id) on delete cascade,
