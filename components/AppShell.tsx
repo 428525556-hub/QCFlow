@@ -66,7 +66,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-blue-50 text-slate-950">
       <header className="sticky top-0 z-20 border-b border-line bg-white/95 backdrop-blur">
-        <div className="mx-auto flex max-w-[1600px] items-center justify-between gap-3 px-4 py-3">
+        <div className="mx-auto flex max-w-[1600px] items-center justify-between gap-3 px-4 py-3 landscape:pl-24">
           <Link href="/" className="flex min-w-0 items-center gap-3">
             <span className="relative h-10 w-10 shrink-0 overflow-hidden rounded border border-line bg-white">
               <Image src="/shuoyu-logo.jpg" alt="SHUOYU" fill sizes="40px" className="object-cover" priority />
@@ -94,15 +94,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </header>
 
-      <main className="mx-auto max-w-[1600px] px-4 pb-24 pt-5 md:pb-10">{children}</main>
+      <main className="mx-auto max-w-[1600px] px-4 pb-24 pt-5 landscape:pb-10 landscape:pl-24">{children}</main>
 
-      <nav className="fixed inset-x-0 bottom-0 z-20 border-t border-line bg-white md:hidden">
-        <div className="grid grid-cols-4">
+      <nav className="fixed inset-x-0 bottom-0 z-20 border-t border-line bg-white landscape:inset-x-auto landscape:inset-y-0 landscape:left-0 landscape:w-20 landscape:flex-col landscape:border-r landscape:border-t-0">
+        <div className="grid grid-cols-4 landscape:flex landscape:flex-col">
           {nav.map((item) => {
             const Icon = item.icon;
             const active = item.href === "/" ? pathname === item.href : pathname === item.href || pathname.startsWith(`${item.href}/`);
             return (
-              <Link key={item.href} href={item.href} className={clsx("flex min-h-[64px] flex-col items-center justify-center gap-1 px-1 text-xs font-bold", active ? "text-machine" : "text-slate-500")}>
+              <Link key={item.href} href={item.href} className={clsx("flex min-h-[64px] flex-col items-center justify-center gap-1 px-1 text-xs font-bold landscape:w-full", active ? "text-machine" : "text-slate-500")}>
                 <Icon size={21} />
                 <span>{t(item.labelKey)}</span>
               </Link>
