@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { uploadCompressedImage } from "@/lib/imageUpload";
 import { getDispatchOrderData, insertDispatchRecord } from "@/src/api/dispatchApi";
@@ -151,7 +151,7 @@ export default function DispatchOrderPage() {
             <ArrowLeft size={16} />
             返回出货
           </Link>
-          <h1 className="truncate text-2xl font-black tracking-normal text-blue-950">出货确认</h1>
+          <h1 className="truncate text-2xl font-semibold tracking-tight text-ink">出货确认</h1>
           <p className="mt-1 text-sm text-blue-700">
             {order.customer_name} / {order.po_number} / {order.sku}
           </p>

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { StatusBadge } from "@/components/StatusBadge";
 import { shortDate } from "@/lib/format";
@@ -40,11 +40,11 @@ export default function PackingHomePage() {
   return (
     <div className="space-y-4">
       <div>
-        <div className="mb-2 inline-flex items-center gap-2 rounded bg-blue-100 px-2.5 py-1 text-xs font-black text-blue-900">
+        <div className="mb-2 inline-flex items-center gap-2 rounded bg-machine/10 px-2.5 py-1 text-xs font-semibold text-machine">
           <PackageCheck size={14} />
           装箱
         </div>
-        <h1 className="text-2xl font-black tracking-normal text-blue-950">装箱订单</h1>
+        <h1 className="text-2xl font-semibold tracking-tight text-ink">装箱订单</h1>
         <p className="mt-1 text-sm text-blue-700">按客户分类，进入订单后按箱号录入颜色、尺码和数量。</p>
       </div>
 

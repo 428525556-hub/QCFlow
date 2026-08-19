@@ -1,7 +1,8 @@
-"use client";
+﻿"use client";
 
 import { useCurrentProfile } from "@/components/AuthGuard";
 import { StatusBadge } from "@/components/StatusBadge";
+import { SkeletonRows } from "@/components/ui";
 import { shortDate } from "@/lib/format";
 import { getClientOrdersProgress } from "@/src/api/ordersApi";
 import { attachClientOrderDefects, getClientOrderTotals, type ClientOrderWithDefects } from "@/src/services/orderService";
@@ -47,11 +48,11 @@ export default function ClientPortalPage() {
   return (
     <div className="space-y-4">
       <div>
-        <div className="mb-2 inline-flex items-center gap-2 rounded bg-blue-100 px-2.5 py-1 text-xs font-black text-blue-900">
+        <div className="mb-2 inline-flex items-center gap-2 rounded bg-machine/10 px-2.5 py-1 text-xs font-semibold text-machine">
           <Eye size={14} />
           客户只读端
         </div>
-        <h1 className="text-2xl font-black tracking-normal text-blue-950">{profile.customer_name}</h1>
+        <h1 className="text-2xl font-semibold tracking-tight text-ink">{profile.customer_name}</h1>
         <p className="mt-1 text-sm text-blue-700">实时查看订单进度、检品报告、不良图片和原因。</p>
       </div>
 
@@ -73,7 +74,11 @@ export default function ClientPortalPage() {
       </section>
 
       <section className="space-y-3">
-        {loading && <div className="panel p-5 text-sm text-slate-500">正在加载客户订单...</div>}
+      {loading && (
+        <div className="rounded-2xl border border-line/80 bg-white shadow-soft">
+          <SkeletonRows rows={4} />
+        </div>
+      )}
         {!loading && orders.length === 0 && <div className="panel p-5 text-sm text-slate-500">暂无可查看订单。</div>}
         {orders.map((order) => (
           <Link key={order.id} href={`/client/orders/${order.id}`} className="panel flex items-center justify-between gap-3 p-4">

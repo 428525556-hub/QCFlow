@@ -1,6 +1,7 @@
-"use client";
+﻿"use client";
 
 import { StatusBadge } from "@/components/StatusBadge";
+import { SkeletonRows } from "@/components/ui";
 import { useLanguage } from "@/components/LanguageProvider";
 import { getOrdersProgressData, subscribeOrdersProgress } from "@/src/api/ordersApi";
 import { getOrderSchedulePlan } from "@/src/api/scheduleApi";
@@ -14,7 +15,7 @@ function ProgressPill({ label, passed, failed, recovered }: { label: string; pas
   const { t } = useLanguage();
 
   return (
-    <div className="rounded border border-blue-100 bg-blue-50 p-3">
+    <div className="rounded-2xl border border-line/80 bg-canvas p-3">
       <div className="flex items-center justify-between gap-2">
         <p className="text-xs font-black text-blue-700">{label}</p>
         {recovered > 0 && <span className="rounded bg-emerald-100 px-2 py-0.5 text-[11px] font-black text-emerald-700">{t("recheckPassed")} {recovered}</span>}
@@ -201,7 +202,7 @@ export default function OrdersPage() {
     return (
       <div className="space-y-3">
         {customerGroups.map((group) => (
-          <button key={group.customerName} type="button" onClick={() => openCustomer(group.customerName)} className="panel w-full p-4 text-left transition hover:border-blue-400 hover:bg-blue-50">
+          <button key={group.customerName} type="button" onClick={() => openCustomer(group.customerName)} className="w-full rounded-2xl border border-line/80 bg-white p-4 text-left shadow-soft transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-raised">
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
                 <h2 className="truncate text-xl font-black text-blue-950">{group.customerName}</h2>
@@ -250,7 +251,7 @@ export default function OrdersPage() {
         {selectedGroup.orders.map((order) => {
           const progress = progressByOrder.get(order.id) ?? getDefaultOrderProgress(order);
           return (
-            <button key={order.id} type="button" onClick={() => openOrder(order.id)} className="panel w-full p-4 text-left transition hover:border-blue-400 hover:bg-blue-50">
+            <button key={order.id} type="button" onClick={() => openOrder(order.id)} className="w-full rounded-2xl border border-line/80 bg-white p-4 text-left shadow-soft transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-raised">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
@@ -282,7 +283,7 @@ export default function OrdersPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-black tracking-normal text-blue-950">{t("orderList")}</h1>
+          <h1 className="text-2xl font-semibold tracking-tight text-ink">{t("orderList")}</h1>
           <p className="mt-1 text-sm text-blue-700">
             {!selectedCustomerName && "先选择客户，再选择订单。"}
             {selectedCustomerName && !selectedOrderId && "选择订单后可以进入检品、X线、装箱、出货和报告。"}
@@ -301,11 +302,15 @@ export default function OrdersPage() {
         </div>
       </div>
 
-      <div className="rounded border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700">
+      <div className="rounded-xl border border-line/80 bg-canvas px-3 py-2 text-[13px] text-steel">
         {t("orderHint")}
       </div>
 
-      {loading && <div className="panel p-5 text-sm text-slate-500">{t("loading")}</div>}
+      {loading && (
+        <div className="rounded-2xl border border-line/80 bg-white shadow-soft">
+          <SkeletonRows rows={4} />
+        </div>
+      )}
       {!loading && orders.length === 0 && <div className="panel p-5 text-sm text-slate-500">{t("noInboundOrders")}</div>}
       {!loading && orders.length > 0 && !selectedCustomerName && renderCustomerList()}
       {!loading && orders.length > 0 && selectedCustomerName && !selectedOrderId && renderOrderSummaryList()}
@@ -357,8 +362,8 @@ function OrderScheduleModal({ orderId, onClose }: { orderId: string; onClose: ()
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-      <div className="max-h-[85vh] w-full max-w-2xl space-y-3 overflow-y-auto rounded bg-white p-5 shadow-xl" onClick={(event) => event.stopPropagation()}>
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal-dialog max-w-2xl space-y-3" onClick={(event) => event.stopPropagation()}>
         <div className="flex items-center justify-between gap-3">
           <h3 className="text-lg font-black text-blue-950">订单检品计划</h3>
           <button type="button" onClick={onClose} className="icon-btn" aria-label="关闭">

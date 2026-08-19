@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { ADMIN_EMAIL, createInviteCode, formatInviteCode, hashInviteCode, isAdminEmail } from "@/lib/security";
 import { getCurrentUser, getRegistrationInvites, insertRegistrationInvite, updateRegistrationInvite } from "@/src/api/userApi";
@@ -119,11 +119,11 @@ export default function AdminInvitesPage() {
   return (
     <div className="space-y-4">
       <div>
-        <div className="mb-2 inline-flex items-center gap-2 rounded bg-blue-100 px-2.5 py-1 text-xs font-black text-blue-900">
+        <div className="mb-2 inline-flex items-center gap-2 rounded bg-machine/10 px-2.5 py-1 text-xs font-semibold text-machine">
           <ShieldCheck size={14} />
           最高权限
         </div>
-        <h1 className="text-2xl font-black tracking-normal text-blue-950">注册邀请码</h1>
+        <h1 className="text-2xl font-semibold tracking-tight text-ink">注册邀请码</h1>
         <p className="mt-1 text-sm text-blue-700">员工和客户注册都必须填写这里生成的一次性加密邀请码。</p>
       </div>
 

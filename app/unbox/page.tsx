@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useCurrentUser } from "@/components/AuthGuard";
 import { PhotoPicker } from "@/components/PhotoPicker";
@@ -351,11 +351,11 @@ export default function UnboxPage() {
   return (
     <div className="mx-auto max-w-4xl space-y-4">
       <div>
-        <div className="mb-2 inline-flex items-center gap-2 rounded bg-blue-100 px-2.5 py-1 text-xs font-black text-blue-900">
+        <div className="mb-2 inline-flex items-center gap-2 rounded bg-machine/10 px-2.5 py-1 text-xs font-semibold text-machine">
           <PackageOpen size={14} />
           开箱
         </div>
-        <h1 className="text-2xl font-black tracking-normal text-blue-950">流水线开箱记录</h1>
+        <h1 className="text-2xl font-semibold tracking-tight text-ink">流水线开箱记录</h1>
         <p className="mt-1 text-sm text-blue-700">记录箱号、订单号、番号、颜色、尺码、数量；少鞋时上传照片留证。</p>
       </div>
 

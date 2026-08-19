@@ -1,8 +1,10 @@
-"use client";
+﻿"use client";
 
 import { useCurrentProfile } from "@/components/AuthGuard";
 import { isAdminEmail } from "@/lib/security";
 import type { InspectionScheduleTask, InspectionTeam, Order, OrderItem, ScheduleChangeLog } from "@/lib/types";
+import { Badge } from "@/components/ui";
+import { SkeletonRows } from "@/components/ui";
 import { getOrdersWithItems, updateOrderItem } from "@/src/api/ordersApi";
 import {
   adjustScheduleTask,
@@ -59,11 +61,34 @@ type OrderPlanData = {
   };
 };
 
-const RISK_LABELS: Record<string, { text: string; className: string }> = {
-  green: { text: "正常", className: "bg-emerald-100 text-emerald-700" },
-  yellow: { text: "黄色预警", className: "bg-yellow-100 text-yellow-700" },
-  red: { text: "红色预警", className: "bg-red-100 text-red-700" },
-  overload: { text: "超负荷", className: "bg-purple-100 text-purple-700" }
+type SkipDetailRow = {
+  poNumber: string;
+  sku: string;
+  color: string;
+  size: string;
+  inspectionType: string;
+  submitStatus: string;
+  quantity: number;
+  itemInbound: number;
+  orderInbound: number;
+  submittedQuantity: number;
+  inspectedCompleted: number;
+  alreadyScheduled: number;
+  reason: string;
+};
+
+const RISK_TEXT: Record<string, string> = {
+  green: "正常",
+  yellow: "黄色预警",
+  red: "红色预警",
+  overload: "超负荷"
+};
+
+const RISK_TONE: Record<string, "green" | "amber" | "red" | "violet"> = {
+  green: "green",
+  yellow: "amber",
+  red: "red",
+  overload: "violet"
 };
 
 const REASON_LABELS: Record<string, string> = {
@@ -111,6 +136,7 @@ export default function SchedulePlanPage() {
   const [orderPlanId, setOrderPlanId] = useState<string | null>(null);
   const [orderPlan, setOrderPlan] = useState<OrderPlanData | null>(null);
   const [orderPlanLoading, setOrderPlanLoading] = useState(false);
+  const [lastSkipDetails, setLastSkipDetails] = useState<SkipDetailRow[]>([]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -158,6 +184,7 @@ export default function SchedulePlanPage() {
     const warnings = (data?.warnings ?? []) as Array<{ level: string; message: string }>;
     const skip = data?.skipSummary;
     const skipDetails = data?.skipDetails ?? [];
+    setLastSkipDetails(skipDetails);
     const skipReasons: string[] = [];
     if (skip && skip.totalUnits > 0) {
       if (skip.pendingItems > 0) skipReasons.push(`${skip.pendingItems} 条明细待送检（未标记可送检）`);
@@ -351,11 +378,11 @@ export default function SchedulePlanPage() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <div className="mb-2 inline-flex items-center gap-2 rounded bg-blue-100 px-2.5 py-1 text-xs font-black text-blue-900">
+          <div className="mb-2 inline-flex items-center gap-2 rounded bg-machine/10 px-2.5 py-1 text-xs font-semibold text-machine">
             <CalendarClock size={14} />
             排程总览
           </div>
-          <h1 className="text-2xl font-black tracking-normal text-blue-950">排程总览</h1>
+          <h1 className="text-2xl font-semibold tracking-tight text-ink">排程总览</h1>
           <p className="mt-1 text-sm text-blue-700">按日期和班组查看任务、产能利用率和风险；可人工调整、锁定、自动重排和紧急插单。</p>
         </div>
         <div className="flex flex-wrap items-end gap-2">
@@ -418,7 +445,36 @@ export default function SchedulePlanPage() {
             </button>
           </div>
 
-          {loading && <div className="panel p-5 text-sm text-slate-500">正在加载...</div>}
+          {lastSkipDetails.length > 0 && (
+            <section className="panel border-amber-200 bg-amber-50/50 p-4">
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <h2 className="font-black text-amber-800">未参与排程的明细（{lastSkipDetails.length}）</h2>
+                <button type="button" onClick={() => setLastSkipDetails([])} className="text-xs font-bold text-amber-700">
+                  清除提示
+                </button>
+              </div>
+              <div className="space-y-1">
+                {lastSkipDetails.map((row, index) => (
+                  <div key={`${row.poNumber}-${row.sku}-${row.inspectionType}-${index}`} className="flex flex-wrap items-center gap-2 rounded bg-white px-3 py-2 text-sm">
+                    <span className="font-black">{row.poNumber} / {row.sku} / {row.color} / {row.size}</span>
+                    <span className="rounded bg-blue-50 px-1.5 py-0.5 text-[11px] font-black text-blue-700">
+                      {row.inspectionType === "xray" ? "X线" : row.inspectionType === "field" ? "出差" : "普通"}
+                    </span>
+                    <span className="text-slate-600">{row.reason}</span>
+                    <span className="ml-auto text-xs text-slate-500">
+                      明细入库 {row.itemInbound} / 订单入库 {row.orderInbound} / 送检 {row.submittedQuantity} / 已检 {row.inspectedCompleted} / 已排 {row.alreadyScheduled} / 总 {row.quantity}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {loading && (
+            <div className="rounded-2xl border border-line/80 bg-white shadow-soft">
+              <SkeletonRows rows={5} />
+            </div>
+          )}
 
           {!loading && plan && (
             <>
@@ -434,7 +490,7 @@ export default function SchedulePlanPage() {
               )}
 
               <section className="panel overflow-hidden">
-                <div className="border-b border-line bg-blue-50/70 px-4 py-3">
+                <div className="border-b border-line bg-canvas px-4 py-3">
                   <h2 className="font-black text-blue-950">每日班组产能负荷（{plan.from} ~ {plan.to}）</h2>
                 </div>
                 <div className="overflow-x-auto">
@@ -475,7 +531,7 @@ export default function SchedulePlanPage() {
               </section>
 
               <section className="panel overflow-hidden">
-                <div className="border-b border-line bg-blue-50/70 px-4 py-3">
+                <div className="border-b border-line bg-canvas px-4 py-3">
                   <h2 className="font-black text-blue-950">排程任务（{plan.tasks.length}）</h2>
                 </div>
                 <div className="overflow-x-auto">
@@ -508,9 +564,7 @@ export default function SchedulePlanPage() {
                           <td className="px-3 py-2 text-right font-black">{task.planned_quantity.toLocaleString()}</td>
                           <td className="px-3 py-2 text-right text-emerald-700">{task.completed_quantity.toLocaleString()}</td>
                           <td className="px-3 py-2">
-                            <span className={`rounded px-1.5 py-0.5 text-[11px] font-black ${RISK_LABELS[task.riskLevel]?.className ?? "bg-emerald-100 text-emerald-700"}`}>
-                              {RISK_LABELS[task.riskLevel]?.text ?? "正常"}
-                            </span>
+                            <Badge status={RISK_TEXT[task.riskLevel] ?? "正常"} tone={RISK_TONE[task.riskLevel] ?? "gray"} />
                           </td>
                           <td className="px-3 py-2">
                             <span className="rounded bg-slate-100 px-2 py-0.5 text-xs font-black text-slate-700">{task.status}</span>
@@ -559,7 +613,7 @@ export default function SchedulePlanPage() {
 
       {tab === "logs" && isAdmin && (
         <section className="panel overflow-hidden">
-          <div className="border-b border-line bg-blue-50/70 px-4 py-3">
+          <div className="border-b border-line bg-canvas px-4 py-3">
             <h2 className="font-black text-blue-950">排程审计记录（{logs.length}）</h2>
           </div>
           <div className="overflow-x-auto">
@@ -617,8 +671,8 @@ export default function SchedulePlanPage() {
       )}
 
       {showReplan && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setShowReplan(false)}>
-          <div className="w-full max-w-md space-y-3 rounded bg-white p-5 shadow-xl" onClick={(event) => event.stopPropagation()}>
+        <div className="modal-backdrop" onClick={() => setShowReplan(false)}>
+          <div className="w-full modal-dialog max-w-md space-y-3" onClick={(event) => event.stopPropagation()}>
             <h3 className="text-lg font-black text-blue-950">确认自动重新排程？</h3>
             <p className="text-sm text-slate-600">
               将重新计算所有未完成订单：旧自动任务标记为「已调整」，已完成的检品记录、已完成/锁定的排程任务不会被修改。确认后无法直接撤销（可查看审计记录）。
@@ -634,8 +688,8 @@ export default function SchedulePlanPage() {
       )}
 
       {insertOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setInsertOpen(false)}>
-          <div className="max-h-[85vh] w-full max-w-2xl space-y-3 overflow-y-auto rounded bg-white p-5 shadow-xl" onClick={(event) => event.stopPropagation()}>
+        <div className="modal-backdrop" onClick={() => setInsertOpen(false)}>
+          <div className="modal-dialog max-w-2xl space-y-3" onClick={(event) => event.stopPropagation()}>
             <div className="flex items-center justify-between gap-3">
               <h3 className="text-lg font-black text-blue-950">紧急插单</h3>
               <button type="button" onClick={() => setInsertOpen(false)} className="icon-btn" aria-label="关闭">
@@ -672,7 +726,7 @@ export default function SchedulePlanPage() {
             )}
 
             {preview && (
-              <div className="space-y-3 rounded border border-line bg-blue-50/70 p-3">
+              <div className="space-y-3 rounded border border-line bg-canvas p-3">
                 {preview.canFit ? (
                   <p className="rounded bg-emerald-50 px-3 py-2 text-sm font-black text-emerald-700">
                     可以插入！建议日期：{preview.suggestedDates.join("、") || "-"}
@@ -714,8 +768,8 @@ export default function SchedulePlanPage() {
       )}
 
       {submitOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setSubmitOpen(false)}>
-          <div className="w-full max-w-md space-y-3 rounded bg-white p-5 shadow-xl" onClick={(event) => event.stopPropagation()}>
+        <div className="modal-backdrop" onClick={() => setSubmitOpen(false)}>
+          <div className="w-full modal-dialog max-w-md space-y-3" onClick={(event) => event.stopPropagation()}>
             <div className="flex items-center justify-between gap-3">
               <h3 className="text-lg font-black text-blue-950">送检登记</h3>
               <button type="button" onClick={() => setSubmitOpen(false)} className="icon-btn" aria-label="关闭">
@@ -767,8 +821,8 @@ export default function SchedulePlanPage() {
       )}
 
       {explainTask && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setExplainTask(null)}>
-          <div className="max-h-[85vh] w-full max-w-2xl space-y-3 overflow-y-auto rounded bg-white p-5 shadow-xl" onClick={(event) => event.stopPropagation()}>
+        <div className="modal-backdrop" onClick={() => setExplainTask(null)}>
+          <div className="modal-dialog max-w-2xl space-y-3" onClick={(event) => event.stopPropagation()}>
             <div className="flex items-center justify-between gap-3">
               <h3 className="text-lg font-black text-blue-950">排程解释</h3>
               <button type="button" onClick={() => setExplainTask(null)} className="icon-btn" aria-label="关闭">
@@ -784,8 +838,8 @@ export default function SchedulePlanPage() {
       )}
 
       {orderPlanId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setOrderPlanId(null)}>
-          <div className="max-h-[85vh] w-full max-w-2xl space-y-3 overflow-y-auto rounded bg-white p-5 shadow-xl" onClick={(event) => event.stopPropagation()}>
+        <div className="modal-backdrop" onClick={() => setOrderPlanId(null)}>
+          <div className="modal-dialog max-w-2xl space-y-3" onClick={(event) => event.stopPropagation()}>
             <div className="flex items-center justify-between gap-3">
               <h3 className="text-lg font-black text-blue-950">订单检品计划</h3>
               <button type="button" onClick={() => setOrderPlanId(null)} className="icon-btn" aria-label="关闭">
@@ -793,7 +847,7 @@ export default function SchedulePlanPage() {
               </button>
             </div>
 
-            {orderPlanLoading && <p className="text-sm text-slate-500">正在加载...</p>}
+            {orderPlanLoading && <SkeletonRows rows={4} />}
 
             {!orderPlanLoading && orderPlan && (
               <>
@@ -815,9 +869,7 @@ export default function SchedulePlanPage() {
                   </div>
                   <div className="rounded border border-line bg-blue-50 p-2">
                     <p className="text-xs font-bold text-slate-500">风险等级</p>
-                    <span className={`mt-0.5 inline-block rounded px-1.5 py-0.5 text-[11px] font-black ${RISK_LABELS[orderPlan.summary.riskLevel]?.className ?? "bg-emerald-100 text-emerald-700"}`}>
-                      {RISK_LABELS[orderPlan.summary.riskLevel]?.text ?? "正常"}
-                    </span>
+                    <Badge status={RISK_TEXT[orderPlan.summary.riskLevel] ?? "正常"} tone={RISK_TONE[orderPlan.summary.riskLevel] ?? "gray"} className="mt-0.5" />
                   </div>
                 </div>
 
@@ -903,8 +955,8 @@ function AdjustModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-      <div className="w-full max-w-md space-y-3 rounded bg-white p-5 shadow-xl" onClick={(event) => event.stopPropagation()}>
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="w-full modal-dialog max-w-md space-y-3" onClick={(event) => event.stopPropagation()}>
         <div className="flex items-center justify-between gap-3">
           <h3 className="text-lg font-black text-blue-950">人工调整排程</h3>
           <button type="button" onClick={onClose} className="icon-btn" aria-label="关闭">

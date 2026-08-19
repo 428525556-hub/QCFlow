@@ -1192,7 +1192,7 @@ export default function ShipOrderPage() {
             <ArrowLeft size={16} />
             返回订单
           </Link>
-          <h1 className="truncate text-2xl font-black tracking-normal text-blue-950">一箱装箱</h1>
+          <h1 className="truncate text-2xl font-semibold tracking-tight text-ink">一箱装箱</h1>
           <p className="mt-1 text-sm text-blue-700">
             {order.customer_name} / {order.po_number} / {order.sku}
           </p>

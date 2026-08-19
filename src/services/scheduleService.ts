@@ -51,8 +51,11 @@ export type ScheduleLoadResult = {
     itemInbound: number;
     orderInbound: number;
     submittedQuantity: number;
+    inspectedCompleted: number;
+    alreadyScheduled: number;
     reason: string;
   }>;
+  noTeamUnitIds: string[];
 };
 
 export async function loadScheduleInputs(
@@ -191,11 +194,13 @@ export async function loadScheduleInputs(
   };
 
   const skipDetails: ScheduleLoadResult["skipDetails"] = [];
+  const noTeamUnitIds: string[] = [];
   for (const unit of units) {
     const item = itemById.get(unit.id);
     const order = orderById.get(unit.orderId);
     if (!item || !order) continue;
     const cap = unit.submittedQuantity - unit.inspectedCompleted - unit.alreadyScheduled;
+    const hasEligibleTeam = teams.some((team) => team.enabled && team.inspectionTypes.includes(unit.inspectionType));
     if (unit.submitStatus === "pending") {
       skipDetails.push({
         poNumber: unit.poNumber,
@@ -208,6 +213,8 @@ export async function loadScheduleInputs(
         itemInbound: Number(item.inbound_quantity ?? 0),
         orderInbound: Number(order.inbound_quantity ?? 0),
         submittedQuantity: unit.submittedQuantity,
+        inspectedCompleted: unit.inspectedCompleted,
+        alreadyScheduled: unit.alreadyScheduled,
         reason: "待送检（未标记可送检）"
       });
     } else if (unit.submitStatus === "paused") {
@@ -222,6 +229,8 @@ export async function loadScheduleInputs(
         itemInbound: Number(item.inbound_quantity ?? 0),
         orderInbound: Number(order.inbound_quantity ?? 0),
         submittedQuantity: unit.submittedQuantity,
+        inspectedCompleted: unit.inspectedCompleted,
+        alreadyScheduled: unit.alreadyScheduled,
         reason: "暂停送检"
       });
     } else if (unit.submitStatus === "ready" && unit.quantity > 0 && cap <= 0) {
@@ -236,7 +245,26 @@ export async function loadScheduleInputs(
         itemInbound: Number(item.inbound_quantity ?? 0),
         orderInbound: Number(order.inbound_quantity ?? 0),
         submittedQuantity: unit.submittedQuantity,
+        inspectedCompleted: unit.inspectedCompleted,
+        alreadyScheduled: unit.alreadyScheduled,
         reason: "可送检数量为 0（明细入库/送检数量或订单入库数量未同步）"
+      });
+    } else if (unit.submitStatus === "ready" && unit.quantity > 0 && cap > 0 && !hasEligibleTeam) {
+      noTeamUnitIds.push(unit.id);
+      skipDetails.push({
+        poNumber: unit.poNumber,
+        sku: unit.sku,
+        color: unit.color,
+        size: unit.size,
+        inspectionType: unit.inspectionType,
+        submitStatus: unit.submitStatus,
+        quantity: unit.quantity,
+        itemInbound: Number(item.inbound_quantity ?? 0),
+        orderInbound: Number(order.inbound_quantity ?? 0),
+        submittedQuantity: unit.submittedQuantity,
+        inspectedCompleted: unit.inspectedCompleted,
+        alreadyScheduled: unit.alreadyScheduled,
+        reason: `没有可检该品类的班组（${unit.inspectionType === "xray" ? "X线" : unit.inspectionType === "field" ? "出差" : "普通检品"}），请在班组管理中勾选`
       });
     }
   }
@@ -257,7 +285,7 @@ export async function loadScheduleInputs(
 
   const cancelableTaskIds = replaceAuto ? openTasks.filter((task) => !task.locked && task.source === "auto").map((task) => task.id) : [];
 
-  return { today, teams, calendar, units, existingAssignments, orders: schedulableOrders, items, teamRows, exceptions, cancelableTaskIds, skipSummary, skipDetails };
+  return { today, teams, calendar, units, existingAssignments, orders: schedulableOrders, items, teamRows, exceptions, cancelableTaskIds, skipSummary, skipDetails, noTeamUnitIds };
 }
 
 export function typesForPlan(plan: InspectionPlan): InspectionType[] {
@@ -289,12 +317,15 @@ function buildRecordDerivedPassed(
     }));
 
     for (const type of typesForPlan(order.inspection_plan)) {
-      const failed = records
-        .filter((record) => record.order_id === order.id && record.inspection_stage === type)
+      const typeRecords = records.filter((record) => record.order_id === order.id && record.inspection_stage === type);
+      const typeReinspections = reinspections.filter((record) => record.order_id === order.id && record.inspection_stage === type);
+      // 只有确实存在检品/返检记录时，才用「入库 − 最终未过」推算已检数量；
+      // 全新订单没有任何记录时视为「尚未检过」（已检 = 0），否则会把没检过的订单当成已全部检完
+      if (typeRecords.length === 0 && typeReinspections.length === 0) continue;
+
+      const failed = typeRecords
         .reduce((sum, record) => sum + Number(record.quantity ?? 0), 0);
-      const recovered = reinspections
-        .filter((record) => record.order_id === order.id && record.inspection_stage === type)
-        .reduce((sum, record) => sum + Number(record.passed_quantity ?? 0), 0);
+      const recovered = typeReinspections.reduce((sum, record) => sum + Number(record.passed_quantity ?? 0), 0);
       const finalFailed = Math.max(0, failed - recovered);
       const passed = Math.max(0, orderInbound - finalFailed);
 

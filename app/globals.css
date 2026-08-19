@@ -16,8 +16,9 @@ html {
 
 body {
   margin: 0;
-  background: #eff6ff;
-  color: #0f172a;
+  background: #f5f5f7;
+  color: #1d1d1f;
+  -webkit-font-smoothing: antialiased;
 }
 
 button,
@@ -32,23 +33,119 @@ button {
 }
 
 .field {
-  @apply w-full rounded border border-line bg-white px-3 py-3 text-base outline-none transition focus:border-machine focus:ring-2 focus:ring-blue-100;
+  @apply w-full rounded-xl border border-line bg-white px-3 py-2.5 text-sm text-ink outline-none transition duration-150 ease-out placeholder:text-slate-400 focus:border-machine focus:ring-4 focus:ring-machine/15;
 }
 
 .label {
-  @apply text-sm font-bold text-slate-700;
+  @apply text-[13px] font-semibold text-steel;
 }
 
 .primary-btn {
-  @apply inline-flex min-h-11 items-center justify-center gap-2 rounded bg-machine px-4 py-3 text-sm font-black text-white shadow-panel transition active:scale-[0.99] disabled:cursor-not-allowed disabled:bg-slate-400;
+  @apply inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-machine px-4 text-sm font-semibold text-white shadow-soft transition-all duration-150 ease-out hover:bg-primary-dark active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-slate-300 disabled:shadow-none;
 }
 
 .secondary-btn {
-  @apply inline-flex min-h-11 items-center justify-center gap-2 rounded border border-line bg-white px-4 py-3 text-sm font-bold text-slate-800 shadow-panel transition active:scale-[0.99] disabled:cursor-not-allowed disabled:text-slate-400;
+  @apply inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-line bg-white px-4 text-sm font-semibold text-ink shadow-none transition-all duration-150 ease-out hover:bg-canvas active:scale-[0.98] disabled:cursor-not-allowed disabled:text-slate-400;
 }
 
 .panel {
-  @apply rounded border border-line bg-white/95 shadow-panel;
+  @apply rounded-2xl border border-line/80 bg-white shadow-soft;
+}
+
+.ghost-btn {
+  @apply inline-flex h-10 items-center justify-center gap-2 rounded-xl px-4 text-sm font-semibold text-machine transition-all duration-150 ease-out hover:bg-machine/10 active:scale-[0.98] disabled:cursor-not-allowed disabled:text-slate-400;
+}
+
+.icon-btn {
+  @apply inline-flex h-9 w-9 items-center justify-center rounded-[10px] text-steel transition-all duration-150 ease-out hover:bg-black/5 active:scale-[0.96] disabled:cursor-not-allowed disabled:text-slate-300;
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+@keyframes page-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.page-enter {
+  animation: page-in 0.25s ease-out both;
+}
+
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    transform: scale(0.98) translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.dialog-enter {
+  animation: dialog-in 0.22s ease-out both;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.fade-in {
+  animation: fade-in 0.2s ease-out both;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.3);
+  padding: 1rem;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  animation: fade-in 0.2s ease-out both;
+}
+
+.modal-dialog {
+  max-height: 85vh;
+  width: 100%;
+  overflow-y: auto;
+  border-radius: 1rem;
+  background: #ffffff;
+  padding: 1.5rem;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08), 0 24px 60px rgba(0, 0, 0, 0.12);
+  animation: dialog-in 0.22s ease-out both;
+}
+
+.ui-table thead th {
+  @apply border-b border-line px-3 py-2.5 text-left text-xs font-semibold text-slate-500;
+}
+
+.ui-table tbody td {
+  @apply px-3 py-3 text-sm;
+}
+
+.ui-table tbody tr {
+  @apply border-b border-line/60 transition-colors duration-150 hover:bg-canvas/70;
+}
+
+.ui-table tbody tr:last-child {
+  @apply border-b-0;
 }
 
 @media (min-width: 960px) and (orientation: landscape) {
@@ -99,9 +196,9 @@ button {
     grid-row: 1 / span 8;
     max-height: calc(100vh - 6rem);
     overflow-y: auto;
-    border: 1px solid #bfdbfe;
-    border-radius: 4px;
-    background: #eff6ff;
+    border: 1px solid #e5e5ea;
+    border-radius: 12px;
+    background: #f5f5f7;
     padding: 0.75rem;
   }
 

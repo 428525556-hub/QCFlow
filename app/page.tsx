@@ -1,14 +1,24 @@
 "use client";
 
 import { useCurrentUser } from "@/components/AuthGuard";
-import { StatusBadge } from "@/components/StatusBadge";
+import { Badge } from "@/components/ui";
+import { EmptyState } from "@/components/ui";
+import { SkeletonRows } from "@/components/ui";
 import { percent, todayRange } from "@/lib/format";
+import type { InspectionRecord, Order } from "@/lib/types";
 import { getDashboardData } from "@/src/api/ordersApi";
 import { buildDashboardMetrics, type DashboardMetrics } from "@/src/services/orderService";
-import type { InspectionRecord, Order } from "@/lib/types";
-import { Activity, BriefcaseBusiness, CalendarDays, CheckCircle2, ClipboardList, PackageCheck, PackageOpen, PackagePlus, PackageSearch, PlayCircle, ScanLine, Truck } from "lucide-react";
+import { Activity, ArrowRight, BriefcaseBusiness, CalendarDays, CheckCircle2, ClipboardList, PackageCheck, PackageOpen, PackagePlus, PackageSearch, PlayCircle, ScanLine, Truck } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+
+function todayKey() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
 
 export default function DashboardPage() {
   const user = useCurrentUser();
@@ -31,103 +41,141 @@ export default function DashboardPage() {
     load();
   }, [user]);
 
-  const metrics: DashboardMetrics = useMemo(() => {
-    return buildDashboardMetrics(orders, records, todayRange());
-  }, [orders, records]);
+  const metrics: DashboardMetrics = useMemo(() => buildDashboardMetrics(orders, records, todayRange()), [orders, records]);
+  const today = todayKey();
+  const pendingInbound = useMemo(() => orders.filter((order) => Number(order.inbound_quantity || 0) < Number(order.quantity || 0)).length, [orders]);
+  const shippingToday = useMemo(() => orders.filter((order) => order.shipping_date === today).length, [orders, today]);
 
-  const cards = [
-    { label: "今日入库订单", value: metrics.todayOrders, icon: ClipboardList },
-    { label: "今日完成检品", value: metrics.todayDone, icon: CheckCircle2 },
-    { label: "总入库件数", value: metrics.totalInbound, icon: PackageSearch },
-    { label: "不良率", value: percent(metrics.defectQty, metrics.totalInbound), icon: Activity }
+  const quickActions = [
+    { href: "/reservations/new", label: "预约", icon: PackageSearch },
+    { href: "/orders/new", label: "入库", icon: PackagePlus },
+    { href: "/unbox", label: "开箱", icon: PackageOpen },
+    { href: "/orders", label: "检品", icon: PlayCircle },
+    { href: "/field", label: "出差", icon: BriefcaseBusiness },
+    { href: "/orders", label: "X线", icon: ScanLine },
+    { href: "/ship", label: "装箱", icon: PackageCheck },
+    { href: "/dispatch", label: "出货", icon: Truck },
+    { href: "/calendar", label: "日历", icon: CalendarDays }
   ];
 
+  const metricsCards = [
+    { label: "今日入库订单", value: metrics.todayOrders, icon: ClipboardList, tone: "text-ink" },
+    { label: "今日完成检品", value: metrics.todayDone, icon: CheckCircle2, tone: "text-success" },
+    { label: "待入库订单", value: pendingInbound, icon: PackageSearch, tone: "text-warning" },
+    { label: "今日出货", value: shippingToday, icon: Truck, tone: "text-machine" },
+    { label: "不良率", value: percent(metrics.defectQty, metrics.totalInbound), icon: Activity, tone: "text-danger" }
+  ] as const;
+
   return (
-    <div className="space-y-5">
-      <section className="rounded border border-blue-900 bg-blue-950 p-5 text-white">
-        <div className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
-          <div>
-            <p className="text-sm font-bold text-sky-300">QCFlow Dashboard</p>
-            <h1 className="mt-2 text-3xl font-black tracking-normal">现场工作台</h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-blue-100">订单入库、普通检品、出差检品、X线检品和出货日程分开处理。</p>
-          </div>
-          <div className="grid grid-cols-2 gap-3 md:min-w-[860px] md:grid-cols-9">
-            <Link href="/reservations/new" className="primary-btn bg-sky-400 text-blue-950">
-              <PackageSearch size={18} />
-              预约
-            </Link>
-            <Link href="/orders/new" className="secondary-btn border-slate-700 bg-slate-900 text-white">
-              <PackagePlus size={18} />
-              入库
-            </Link>
-            <Link href="/unbox" className="secondary-btn border-slate-700 bg-slate-900 text-white">
-              <PackageOpen size={18} />
-              开箱
-            </Link>
-            <Link href="/orders" className="secondary-btn border-slate-700 bg-slate-900 text-white">
-              <PlayCircle size={18} />
-              检品
-            </Link>
-            <Link href="/field" className="secondary-btn border-slate-700 bg-slate-900 text-white">
-              <BriefcaseBusiness size={18} />
-              出差
-            </Link>
-            <Link href="/orders" className="secondary-btn border-slate-700 bg-slate-900 text-white">
-              <ScanLine size={18} />
-              X线
-            </Link>
-            <Link href="/ship" className="secondary-btn border-slate-700 bg-slate-900 text-white">
-              <PackageCheck size={18} />
-              装箱
-            </Link>
-            <Link href="/dispatch" className="secondary-btn border-slate-700 bg-slate-900 text-white">
-              <Truck size={18} />
-              出货
-            </Link>
-            <Link href="/calendar" className="secondary-btn border-slate-700 bg-slate-900 text-white">
-              <CalendarDays size={18} />
-              日历
-            </Link>
-          </div>
-        </div>
+    <div className="space-y-6">
+      <section>
+        <p className="text-[13px] font-semibold text-steel">{today}</p>
+        <h1 className="mt-1 text-2xl font-semibold tracking-tight">今日工作</h1>
+        <p className="mt-1 text-sm text-steel">查看今天需要处理的任务和现场状态。</p>
       </section>
 
-      <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        {cards.map((card) => {
+      <section className="grid grid-cols-2 gap-3 md:grid-cols-5">
+        {metricsCards.map((card) => {
           const Icon = card.icon;
           return (
-            <div key={card.label} className="panel p-4">
-              <div className="mb-4 flex h-10 w-10 items-center justify-center rounded bg-slate-100 text-steel">
-                <Icon size={20} />
+            <div key={card.label} className="rounded-2xl border border-line/80 bg-white p-4 shadow-soft">
+              <div className="flex items-center gap-2">
+                <Icon size={15} className="text-steel" />
+                <p className="text-xs font-medium text-steel">{card.label}</p>
               </div>
-              <p className="text-xs font-bold text-slate-500">{card.label}</p>
-              <p className="mt-1 text-2xl font-black tracking-normal">{card.value}</p>
+              <p className={`tabular-nums mt-3 text-3xl font-semibold tracking-tight ${card.tone}`}>{card.value}</p>
             </div>
           );
         })}
       </section>
 
       <section>
+        <p className="mb-2 text-[13px] font-semibold text-steel">快速操作</p>
+        <div className="flex flex-wrap gap-2">
+          {quickActions.map((action) => {
+            const Icon = action.icon;
+            return (
+              <Link
+                key={action.label}
+                href={action.href}
+                className="inline-flex h-9 items-center gap-1.5 rounded-xl px-3.5 text-[13px] font-medium text-ink transition-all duration-150 ease-out hover:bg-black/5 hover:text-machine active:scale-[0.98]"
+              >
+                <Icon size={16} className="text-steel" />
+                {action.label}
+              </Link>
+            );
+          })}
+        </div>
+      </section>
+
+      <section>
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-lg font-black">最近入库订单</h2>
+          <h2 className="text-[15px] font-semibold tracking-tight">最近入库订单</h2>
+          <Link href="/orders" className="inline-flex items-center gap-1 text-[13px] font-medium text-machine hover:underline">
+            查看全部
+            <ArrowRight size={14} />
+          </Link>
         </div>
-        <div className="space-y-3">
-          {loading && <div className="panel p-5 text-sm text-slate-500">正在加载订单...</div>}
-          {!loading && orders.length === 0 && <div className="panel p-5 text-sm text-slate-500">暂无入库订单，请先点击“入库”。</div>}
-          {orders.slice(0, 8).map((order) => (
-            <div key={order.id} className="panel p-4">
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <p className="truncate font-black">{order.po_number}</p>
-                  <StatusBadge status={order.status} />
-                </div>
-                <p className="mt-1 truncate text-sm text-slate-500">
-                  {order.customer_name} · 番号 {order.sku} · 入库 {order.quantity} 件
-                </p>
-              </div>
+
+        {loading && (
+          <div className="rounded-2xl border border-line/80 bg-white shadow-soft">
+            <SkeletonRows rows={4} />
+          </div>
+        )}
+
+        {!loading && orders.length === 0 && (
+          <div className="rounded-2xl border border-line/80 bg-white shadow-soft">
+            <EmptyState
+              icon={<ClipboardList size={32} />}
+              title="暂无入库订单"
+              description="先录入预约订单，再到「入库」登记实际到货数量。"
+              action={
+                <Link href="/orders/new" className="inline-flex h-9 items-center rounded-xl bg-machine px-4 text-[13px] font-semibold text-white transition-all duration-150 ease-out hover:bg-primary-dark active:scale-[0.98]">
+                  去入库
+                </Link>
+              }
+            />
+          </div>
+        )}
+
+        {!loading && orders.length > 0 && (
+          <div className="overflow-hidden rounded-2xl border border-line/80 bg-white shadow-soft">
+            <div className="overflow-x-auto">
+              <table className="ui-table w-full min-w-[720px]">
+                <thead>
+                  <tr>
+                    <th>订单号</th>
+                    <th>客户</th>
+                    <th>番号</th>
+                    <th className="text-right">数量</th>
+                    <th>状态</th>
+                    <th>出货日期</th>
+                    <th className="text-right">操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {orders.slice(0, 8).map((order) => (
+                    <tr key={order.id}>
+                      <td className="font-semibold">{order.po_number}</td>
+                      <td className="text-steel">{order.customer_name}</td>
+                      <td className="text-steel">{order.sku}</td>
+                      <td className="tabular-nums text-right font-semibold">{order.quantity.toLocaleString()}</td>
+                      <td>
+                        <Badge status={order.status} />
+                      </td>
+                      <td className="tabular-nums text-steel">{order.shipping_date ?? "-"}</td>
+                      <td className="text-right">
+                        <Link href={`/inspect/${order.id}`} className="text-[13px] font-medium text-machine hover:underline">
+                          检品
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-          ))}
-        </div>
+          </div>
+        )}
       </section>
     </div>
   );

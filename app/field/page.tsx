@@ -42,10 +42,10 @@ export default function FieldInspectionPortalPage() {
 
   return (
     <div className="space-y-4">
-      <section className="rounded border border-blue-900 bg-blue-950 p-5 text-white">
-        <p className="text-sm font-bold text-sky-300">Field QC</p>
-        <h1 className="mt-2 text-3xl font-black tracking-normal">出差检品</h1>
-        <p className="mt-2 text-sm text-blue-100">账号范围：{profile.role === "field_inspector" ? profile.customer_name || "未设置客户名称" : "全部出差检品订单"}</p>
+      <section>
+        <p className="text-[13px] font-semibold text-steel">Field QC</p>
+        <h1 className="mt-1 text-2xl font-semibold tracking-tight">出差检品</h1>
+        <p className="mt-1 text-sm text-steel">账号范围：{profile.role === "field_inspector" ? profile.customer_name || "未设置客户名称" : "全部出差检品订单"}</p>
       </section>
 
       <section className="grid grid-cols-3 gap-3">

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useCurrentUser } from "@/components/AuthGuard";
 import { parseCartonNo } from "@/lib/cartonNumbers";
@@ -553,11 +553,11 @@ export default function NewReservationPage() {
   return (
     <div className="mx-auto max-w-5xl space-y-4">
       <div>
-        <div className="mb-2 inline-flex items-center gap-2 rounded bg-blue-100 px-2.5 py-1 text-xs font-black text-blue-900">
+        <div className="mb-2 inline-flex items-center gap-2 rounded bg-machine/10 px-2.5 py-1 text-xs font-semibold text-machine">
           <PackageSearch size={14} />
           预约检品
         </div>
-        <h1 className="text-2xl font-black tracking-normal text-blue-950">创建预约总单</h1>
+        <h1 className="text-2xl font-semibold tracking-tight text-ink">创建预约总单</h1>
         <p className="mt-1 text-sm text-blue-700">按客户、工厂、日期建立总单，再按订单号、货号、颜色、尺码录入明细。</p>
       </div>
 

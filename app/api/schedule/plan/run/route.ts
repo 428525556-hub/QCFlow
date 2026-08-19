@@ -17,7 +17,8 @@ export const POST = withApiHandler(async (request) => {
   if (rolloverResult.error) throw databaseError(rolloverResult.error);
 
   const inputs = await loadScheduleInputs(supabase, { replaceAuto: true });
-  const readyUnits = inputs.units.filter((unit) => unit.submitStatus === "ready" && unit.quantity > 0);
+  const noTeamSet = new Set(inputs.noTeamUnitIds);
+  const readyUnits = inputs.units.filter((unit) => unit.submitStatus === "ready" && unit.quantity > 0 && !noTeamSet.has(unit.id));
   if (readyUnits.length === 0) {
     return apiSuccess({ run_id: null, inserted: 0, cancelled: 0, unassigned: [], warnings: [], message: "没有可排程的订单明细（请先在订单管理中登记送检并标记为可送检）。" });
   }

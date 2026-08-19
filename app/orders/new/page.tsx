@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useCurrentUser } from "@/components/AuthGuard";
 import type { Order, OrderItem } from "@/lib/types";
@@ -146,11 +146,11 @@ export default function NewInboundPage() {
   return (
     <div className="mx-auto max-w-4xl space-y-4">
       <div>
-        <div className="mb-2 inline-flex items-center gap-2 rounded bg-blue-100 px-2.5 py-1 text-xs font-black text-blue-900">
+        <div className="mb-2 inline-flex items-center gap-2 rounded bg-machine/10 px-2.5 py-1 text-xs font-semibold text-machine">
           <PackagePlus size={14} />
           分批入库
         </div>
-        <h1 className="text-2xl font-black tracking-normal text-blue-950">按预约订单入库</h1>
+        <h1 className="text-2xl font-semibold tracking-tight text-ink">按预约订单入库</h1>
         <p className="mt-1 text-sm text-blue-700">货到多少就录多少，系统自动累计已入库和未入库数量。</p>
       </div>
 

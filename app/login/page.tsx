@@ -102,58 +102,58 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-950 px-5 py-8 text-white">
+    <main className="min-h-screen bg-canvas px-5 py-8">
       <div className="mx-auto flex min-h-[88vh] max-w-md flex-col justify-center">
-        <div className="mb-8">
-          <div className="relative mb-5 h-20 w-20 overflow-hidden rounded border border-slate-700 bg-white shadow-2xl">
-            <Image src="/shuoyu-logo.jpg" alt="SHUOYU" fill sizes="80px" className="object-cover" priority />
+        <div className="mb-8 text-center">
+          <div className="relative mx-auto mb-5 h-16 w-16 overflow-hidden rounded-2xl border border-line bg-white shadow-soft">
+            <Image src="/shuoyu-logo.jpg" alt="SHUOYU" fill sizes="64px" className="object-cover" priority />
           </div>
-          <h1 className="text-4xl font-black tracking-normal">QCFlow</h1>
-          <p className="mt-3 text-slate-300">鞋服检品订单、现场记录与报告管理。</p>
+          <h1 className="text-3xl font-semibold tracking-tight">QCFlow</h1>
+          <p className="mt-2 text-sm text-steel">鞋服检品订单、现场记录与报告管理。</p>
         </div>
 
-        <form onSubmit={submit} className="rounded border border-slate-700 bg-slate-900 p-5 shadow-2xl">
-          <label className="label text-slate-200" htmlFor="email">
+        <form onSubmit={submit} className="rounded-2xl border border-line/80 bg-white p-6 shadow-dialog">
+          <label className="label" htmlFor="email">
             邮箱
           </label>
-          <div className="mt-2 flex items-center gap-2 rounded border border-slate-700 bg-slate-950 px-3">
-            <Mail size={18} className="text-slate-400" />
-            <input id="email" type="email" className="w-full bg-transparent py-3 text-white outline-none" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" required />
+          <div className="mt-2 flex items-center gap-2 rounded-xl border border-line bg-canvas/60 px-3 focus-within:border-machine focus-within:ring-4 focus-within:ring-machine/15">
+            <Mail size={17} className="text-steel" />
+            <input id="email" type="email" className="w-full bg-transparent py-2.5 text-sm outline-none placeholder:text-slate-400" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" required placeholder="you@example.com" />
           </div>
 
-          <label className="label mt-4 block text-slate-200" htmlFor="password">
+          <label className="label mt-4 block" htmlFor="password">
             密码
           </label>
-          <div className="mt-2 flex items-center gap-2 rounded border border-slate-700 bg-slate-950 px-3">
-            <Lock size={18} className="text-slate-400" />
-            <input id="password" type="password" className="w-full bg-transparent py-3 text-white outline-none" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" minLength={6} required />
+          <div className="mt-2 flex items-center gap-2 rounded-xl border border-line bg-canvas/60 px-3 focus-within:border-machine focus-within:ring-4 focus-within:ring-machine/15">
+            <Lock size={17} className="text-steel" />
+            <input id="password" type="password" className="w-full bg-transparent py-2.5 text-sm outline-none placeholder:text-slate-400" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" minLength={6} required placeholder="••••••" />
           </div>
 
-          <label className="label mt-4 block text-slate-200" htmlFor="invite">
+          <label className="label mt-4 block" htmlFor="invite">
             注册邀请码
           </label>
-          <div className="mt-2 flex items-center gap-2 rounded border border-slate-700 bg-slate-950 px-3">
-            <KeyRound size={18} className="text-slate-400" />
-            <input id="invite" type="text" className="w-full bg-transparent py-3 uppercase text-white outline-none" value={inviteCode} onChange={(event) => setInviteCode(event.target.value)} placeholder={adminAccount ? "管理员账号可不填" : "注册必填"} />
+          <div className="mt-2 flex items-center gap-2 rounded-xl border border-line bg-canvas/60 px-3 focus-within:border-machine focus-within:ring-4 focus-within:ring-machine/15">
+            <KeyRound size={17} className="text-steel" />
+            <input id="invite" type="text" className="w-full bg-transparent py-2.5 text-sm uppercase outline-none placeholder:text-slate-400" value={inviteCode} onChange={(event) => setInviteCode(event.target.value)} placeholder={adminAccount ? "管理员账号可不填" : "注册必填"} />
           </div>
-          <p className="mt-2 text-xs text-slate-400">管理员账号：{ADMIN_EMAIL}。员工和客户都需要管理员生成的邀请码才能创建账号。</p>
+          <p className="mt-2 text-xs text-steel">管理员账号：{ADMIN_EMAIL}。员工和客户都需要管理员生成的邀请码才能创建账号。</p>
 
           {message && (
-            <div className="mt-4 rounded bg-slate-800 px-3 py-2 text-sm text-slate-200">
+            <div className="mt-4 rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-800">
               <p>{needsEmailConfirmation ? "邮箱还没有验证，请先打开确认邮件。" : message}</p>
               {needsEmailConfirmation && (
-                <button type="button" onClick={resendConfirmation} disabled={loading || !email} className="mt-3 text-sm font-black text-safety">
+                <button type="button" onClick={resendConfirmation} disabled={loading || !email} className="mt-3 text-sm font-semibold text-machine">
                   重发确认邮件
                 </button>
               )}
             </div>
           )}
 
-          <div className="mt-5 grid grid-cols-2 gap-3">
-            <button type="submit" disabled={loading} className="primary-btn bg-safety text-slate-950">
+          <div className="mt-6 grid grid-cols-2 gap-3">
+            <button type="submit" disabled={loading} className="primary-btn">
               登录
             </button>
-            <button type="button" disabled={loading || !email || !password || (!adminAccount && !inviteCode)} onClick={signUp} className="secondary-btn border-slate-700 bg-slate-900 text-white">
+            <button type="button" disabled={loading || !email || !password || (!adminAccount && !inviteCode)} onClick={signUp} className="secondary-btn">
               创建账号
             </button>
           </div>

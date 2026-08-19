@@ -1,6 +1,8 @@
-"use client";
+﻿"use client";
 
 import type { InspectionScheduleTask, InspectionTeam, Order, OrderItem, ScheduleProgressRecord } from "@/lib/types";
+import { Badge } from "@/components/ui";
+import { SkeletonRows } from "@/components/ui";
 import { getTodayPlan, recordScheduleProgress } from "@/src/api/scheduleApi";
 import { AlertTriangle, CalendarDays, CheckSquare, Clock, Info, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -21,11 +23,18 @@ type TeamGroup = {
   tasks: TodayTaskRow[];
 };
 
-const RISK_LABELS: Record<string, { text: string; className: string }> = {
-  green: { text: "正常", className: "bg-emerald-100 text-emerald-700" },
-  yellow: { text: "黄色预警", className: "bg-yellow-100 text-yellow-700" },
-  red: { text: "红色预警", className: "bg-red-100 text-red-700" },
-  overload: { text: "超负荷", className: "bg-purple-100 text-purple-700" }
+const RISK_TEXT: Record<string, string> = {
+  green: "正常",
+  yellow: "黄色预警",
+  red: "红色预警",
+  overload: "超负荷"
+};
+
+const RISK_TONE: Record<string, "green" | "amber" | "red" | "violet"> = {
+  green: "green",
+  yellow: "amber",
+  red: "red",
+  overload: "violet"
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -137,7 +146,7 @@ const emergencyTasks = useMemo(() => {
     };
 
     return (
-      <div className="rounded border border-line bg-blue-50/70 p-3 text-sm">
+      <div className="rounded border border-line bg-canvas p-3 text-sm">
         <div className="mb-2 flex items-center gap-2">
           <Info size={15} className="text-machine" />
           <p className="font-black text-blue-950">为什么安排在这一天</p>
@@ -209,11 +218,11 @@ const emergencyTasks = useMemo(() => {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <div className="mb-2 inline-flex items-center gap-2 rounded bg-blue-100 px-2.5 py-1 text-xs font-black text-blue-900">
+          <div className="mb-2 inline-flex items-center gap-2 rounded bg-machine/10 px-2.5 py-1 text-xs font-semibold text-machine">
             <CalendarDays size={14} />
             今日检品计划
           </div>
-          <h1 className="text-2xl font-black tracking-normal text-blue-950">今日计划</h1>
+          <h1 className="text-2xl font-semibold tracking-tight text-ink">今日计划</h1>
           <p className="mt-1 text-sm text-blue-700">今天每个班应该检什么、检多少，以及按当前产能能否按时完成。</p>
         </div>
         <label className="text-sm font-bold text-slate-700">
@@ -224,7 +233,11 @@ const emergencyTasks = useMemo(() => {
 
       {message && <p className="rounded bg-blue-50 px-3 py-2 text-sm font-bold text-blue-800">{message}</p>}
 
-      {loading && <div className="panel p-5 text-sm text-slate-500">正在加载...</div>}
+      {loading && (
+        <div className="rounded-2xl border border-line/80 bg-white shadow-soft">
+          <SkeletonRows rows={5} />
+        </div>
+      )}
 
       {!loading && metrics && (
         <>
@@ -319,7 +332,7 @@ const emergencyTasks = useMemo(() => {
 
           {groups.map((group) => (
             <section key={group.teamId || "unassigned"} className="panel overflow-hidden">
-              <div className="flex items-center justify-between gap-3 border-b border-line bg-blue-50/70 px-4 py-3">
+              <div className="flex items-center justify-between gap-3 border-b border-line bg-canvas px-4 py-3">
                 <h2 className="font-black text-blue-950">{group.teamName}</h2>
                 <p className="text-xs font-bold text-slate-600">
                   计划 {group.plannedUnits.toLocaleString()} 单位 / 产能 {group.capacityUnits.toLocaleString()}
@@ -363,9 +376,7 @@ const emergencyTasks = useMemo(() => {
                           <td className={`px-3 py-2 text-right font-black ${difference > 0 ? "text-amber-700" : "text-slate-500"}`}>{difference.toLocaleString()}</td>
                           <td className="px-3 py-2 text-xs font-bold">
                             {deadlineChain.preferred ?? "-"} / {deadlineChain.hard ?? "-"}
-                            <span className={`ml-1 inline-block rounded px-1.5 py-0.5 text-[10px] font-black ${RISK_LABELS[risk]?.className ?? "bg-emerald-100 text-emerald-700"}`}>
-                              {RISK_LABELS[risk]?.text ?? "正常"}
-                            </span>
+                            <Badge status={RISK_TEXT[risk] ?? "正常"} tone={RISK_TONE[risk] ?? "gray"} className="ml-1" />
                           </td>
                           <td className="px-3 py-2">
                             <span className="rounded bg-slate-100 px-2 py-0.5 text-xs font-black text-slate-700">{STATUS_LABELS[task.status] ?? task.status}</span>
@@ -401,8 +412,8 @@ const emergencyTasks = useMemo(() => {
       )}
 
       {explainTask && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setExplainTask(null)}>
-          <div className="max-h-[85vh] w-full max-w-2xl space-y-3 overflow-y-auto rounded bg-white p-5 shadow-xl" onClick={(event) => event.stopPropagation()}>
+        <div className="modal-backdrop" onClick={() => setExplainTask(null)}>
+          <div className="modal-dialog max-w-2xl space-y-3" onClick={(event) => event.stopPropagation()}>
             <div className="flex items-center justify-between gap-3">
               <h3 className="text-lg font-black text-blue-950">排程解释</h3>
               <button type="button" onClick={() => setExplainTask(null)} className="icon-btn" aria-label="关闭">
@@ -418,8 +429,8 @@ const emergencyTasks = useMemo(() => {
       )}
 
       {checkInTask && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setCheckInTask(null)}>
-          <div className="w-full max-w-sm space-y-3 rounded bg-white p-5 shadow-xl" onClick={(event) => event.stopPropagation()}>
+        <div className="modal-backdrop" onClick={() => setCheckInTask(null)}>
+          <div className="w-full modal-dialog max-w-sm space-y-3" onClick={(event) => event.stopPropagation()}>
             <div className="flex items-center justify-between gap-3">
               <h3 className="text-lg font-black text-blue-950">任务打卡</h3>
               <button type="button" onClick={() => setCheckInTask(null)} className="icon-btn" aria-label="关闭">

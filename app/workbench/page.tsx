@@ -7,13 +7,13 @@ import {
   Archive,
   BriefcaseBusiness,
   CalendarClock,
-  CalendarRange,
   CalendarDays,
+  CalendarRange,
   ClipboardList,
   Factory,
   FileText,
-  PackageOpen,
   PackageCheck,
+  PackageOpen,
   PackagePlus,
   PackageSearch,
   RefreshCw,
@@ -82,31 +82,38 @@ export default function WorkbenchPage() {
   const canManageInvites = isAdminEmail(profile?.email ?? "") || profile?.role === "admin";
 
   return (
-    <div className="space-y-5">
-      <section className="rounded border border-blue-900 bg-blue-950 p-5 text-white">
-        <p className="text-sm font-bold text-sky-300">{t("workbenchEyebrow")}</p>
-        <h1 className="mt-2 text-3xl font-black tracking-normal">{t("workbenchTitle")}</h1>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-blue-100">{t("workbenchIntro")}</p>
+    <div className="space-y-6">
+      <section>
+        <p className="text-[13px] font-semibold text-steel">QCFlow Workbench</p>
+        <h1 className="mt-1 text-2xl font-semibold tracking-tight">{t("workbenchTitle")}</h1>
+        <p className="mt-1 max-w-2xl text-sm text-steel">{t("workbenchIntro")}</p>
       </section>
 
-      <section className="grid gap-4 md:grid-cols-2">
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {groups.map((group) => (
-          <article key={group.titleKey} className="panel p-4">
+          <article
+            key={group.titleKey}
+            className="rounded-2xl border border-line/80 bg-white p-5 shadow-soft transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-raised"
+          >
             <div className="mb-4 flex items-start justify-between gap-3">
               <div>
-                <p className="text-xs font-black text-machine">{t(group.roleKey)}</p>
-                <h2 className="mt-1 text-xl font-black text-blue-950">{t(group.titleKey)}</h2>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-steel">{t(group.roleKey)}</p>
+                <h2 className="mt-1 text-[17px] font-semibold tracking-tight">{t(group.titleKey)}</h2>
               </div>
-              <span className="rounded bg-blue-50 px-2 py-1 text-xs font-bold text-blue-700">{t("workflow")}</span>
+              <span className="rounded-md bg-canvas px-2 py-0.5 text-[11px] font-medium text-steel">{t("workflow")}</span>
             </div>
-            <p className="min-h-10 text-sm leading-6 text-slate-600">{t(group.descriptionKey)}</p>
-            <div className="mt-4 grid grid-cols-2 gap-3">
+            <p className="min-h-10 text-[13px] leading-6 text-steel">{t(group.descriptionKey)}</p>
+            <div className="mt-4 grid grid-cols-2 gap-1">
               {group.actions.map((action) => {
                 const Icon = action.icon;
                 return (
-                  <Link key={`${group.titleKey}-${action.labelKey}`} href={action.href} className="secondary-btn justify-start">
-                    <Icon size={18} />
-                    {t(action.labelKey)}
+                  <Link
+                    key={`${group.titleKey}-${action.labelKey}`}
+                    href={action.href}
+                    className="inline-flex items-center gap-2 rounded-xl px-3 py-2 text-[13px] font-medium text-ink transition-all duration-150 ease-out hover:bg-machine/10 hover:text-machine active:scale-[0.98]"
+                  >
+                    <Icon size={16} className="shrink-0 text-steel" />
+                    <span className="truncate">{t(action.labelKey)}</span>
                   </Link>
                 );
               })}
@@ -116,18 +123,16 @@ export default function WorkbenchPage() {
       </section>
 
       {canManageInvites && (
-        <section className="panel p-4">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="text-xs font-black text-machine">{t("administrator")}</p>
-              <h2 className="mt-1 text-xl font-black text-blue-950">{t("accountAccess")}</h2>
-              <p className="mt-1 text-sm text-slate-600">{t("inviteDesc")}</p>
-            </div>
-            <Link href="/admin/invites" className="primary-btn shrink-0">
-              <ShieldCheck size={18} />
-              {t("navAdmin")}
-            </Link>
+        <section className="flex items-center justify-between gap-3 rounded-2xl border border-line/80 bg-white p-5 shadow-soft">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-steel">{t("administrator")}</p>
+            <h2 className="mt-1 text-[17px] font-semibold tracking-tight">{t("accountAccess")}</h2>
+            <p className="mt-1 text-[13px] text-steel">{t("inviteDesc")}</p>
           </div>
+          <Link href="/admin/invites" className="inline-flex h-10 shrink-0 items-center gap-2 rounded-xl bg-machine px-4 text-sm font-semibold text-white shadow-soft transition-all duration-150 ease-out hover:bg-primary-dark active:scale-[0.98]">
+            <ShieldCheck size={16} />
+            {t("navAdmin")}
+          </Link>
         </section>
       )}
     </div>

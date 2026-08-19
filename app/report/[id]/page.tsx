@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { StatusBadge } from "@/components/StatusBadge";
 import { shortDate } from "@/lib/format";
@@ -399,45 +399,45 @@ export default function ReportPage() {
         ].map(([label, value]) => (
           <div key={label} className="panel p-4 text-center">
             <p className="text-xs font-black text-slate-500">{label}</p>
-            <p className="mt-1 text-2xl font-black tracking-normal text-blue-950">{value}</p>
+            <p className="mt-1 text-2xl font-semibold tracking-tight text-ink">{value}</p>
           </div>
         ))}
       </section>
 
       <section className="panel overflow-hidden">
-        <div className="border-b border-line bg-emerald-700 px-4 py-3 text-white">
+        <div className="border-b border-line bg-canvas px-4 py-3">
           <h2 className="font-black">二次检品汇总</h2>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[720px] border-collapse text-sm">
             <thead>
-              <tr className="bg-emerald-50">
-                <th className="border border-slate-300 px-3 py-2 text-left">阶段</th>
-                <th className="border border-slate-300 px-3 py-2 text-left">不良原因</th>
-                <th className="border border-slate-300 px-3 py-2 text-left">颜色</th>
-                <th className="border border-slate-300 px-3 py-2 text-left">尺码</th>
-                <th className="border border-slate-300 px-3 py-2 text-right">转良</th>
-                <th className="border border-slate-300 px-3 py-2 text-right">仍不良</th>
-                <th className="border border-slate-300 px-3 py-2 text-left">备注</th>
+              <tr className="bg-canvas">
+                <th className="border-b border-line/60 px-3 py-2 text-left">阶段</th>
+                <th className="border-b border-line/60 px-3 py-2 text-left">不良原因</th>
+                <th className="border-b border-line/60 px-3 py-2 text-left">颜色</th>
+                <th className="border-b border-line/60 px-3 py-2 text-left">尺码</th>
+                <th className="border-b border-line/60 px-3 py-2 text-right">转良</th>
+                <th className="border-b border-line/60 px-3 py-2 text-right">仍不良</th>
+                <th className="border-b border-line/60 px-3 py-2 text-left">备注</th>
               </tr>
             </thead>
             <tbody>
               {reinspections.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="border border-slate-300 px-3 py-4 text-center text-slate-500">
+                  <td colSpan={7} className="border-b border-line/60 px-3 py-4 text-center text-slate-500">
                     暂无二次检品记录
                   </td>
                 </tr>
               )}
               {reinspections.map((item) => (
                 <tr key={item.id}>
-                  <td className="border border-slate-300 px-3 py-2 font-black">{item.inspection_stage === "xray" ? "X光" : item.inspection_stage === "field" ? "出差检品" : "普通检品"}</td>
-                  <td className="border border-slate-300 px-3 py-2">{item.defect_type}</td>
-                  <td className="border border-slate-300 px-3 py-2">{item.color || "-"}</td>
-                  <td className="border border-slate-300 px-3 py-2">{item.size || "-"}</td>
-                  <td className="border border-slate-300 px-3 py-2 text-right font-black text-emerald-700">{item.passed_quantity}</td>
-                  <td className="border border-slate-300 px-3 py-2 text-right font-black text-red-600">{item.failed_quantity}</td>
-                  <td className="border border-slate-300 px-3 py-2">{item.remark || "-"}</td>
+                  <td className="border-b border-line/60 px-3 py-2 font-black">{item.inspection_stage === "xray" ? "X光" : item.inspection_stage === "field" ? "出差检品" : "普通检品"}</td>
+                  <td className="border-b border-line/60 px-3 py-2">{item.defect_type}</td>
+                  <td className="border-b border-line/60 px-3 py-2">{item.color || "-"}</td>
+                  <td className="border-b border-line/60 px-3 py-2">{item.size || "-"}</td>
+                  <td className="border-b border-line/60 px-3 py-2 text-right font-black text-emerald-700">{item.passed_quantity}</td>
+                  <td className="border-b border-line/60 px-3 py-2 text-right font-black text-red-600">{item.failed_quantity}</td>
+                  <td className="border-b border-line/60 px-3 py-2">{item.remark || "-"}</td>
                 </tr>
               ))}
             </tbody>
@@ -446,33 +446,33 @@ export default function ReportPage() {
       </section>
 
       <section className="panel overflow-hidden">
-        <div className="border-b border-line bg-blue-950 px-4 py-3 text-white">
-          <h2 className="font-black">颜色尺码不良统计</h2>
+      <div className="border-b border-line bg-canvas px-4 py-3">
+          <h2 className="font-semibold text-ink">颜色尺码不良统计</h2>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[640px] border-collapse text-sm">
             <thead>
-              <tr className="bg-blue-50">
-                <th className="border border-slate-300 px-3 py-2 text-left">颜色</th>
-                <th className="border border-slate-300 px-3 py-2 text-left">尺码</th>
-                <th className="border border-slate-300 px-3 py-2 text-left">不良原因</th>
-                <th className="border border-slate-300 px-3 py-2 text-right">数量</th>
+              <tr className="bg-canvas">
+                <th className="border-b border-line/60 px-3 py-2 text-left">颜色</th>
+                <th className="border-b border-line/60 px-3 py-2 text-left">尺码</th>
+                <th className="border-b border-line/60 px-3 py-2 text-left">不良原因</th>
+                <th className="border-b border-line/60 px-3 py-2 text-right">数量</th>
               </tr>
             </thead>
             <tbody>
               {report.colorSizeRows.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="border border-slate-300 px-3 py-4 text-center text-slate-500">
+                  <td colSpan={4} className="border-b border-line/60 px-3 py-4 text-center text-slate-500">
                     暂无不良尺码颜色记录
                   </td>
                 </tr>
               )}
               {report.colorSizeRows.map((row) => (
                 <tr key={`${row.color}-${row.size}-${row.defectType}`}>
-                  <td className="border border-slate-300 px-3 py-2 font-black">{row.color}</td>
-                  <td className="border border-slate-300 px-3 py-2">{row.size}</td>
-                  <td className="border border-slate-300 px-3 py-2">{row.defectType}</td>
-                  <td className="border border-slate-300 px-3 py-2 text-right font-black text-blue-800">{row.quantity}</td>
+                  <td className="border-b border-line/60 px-3 py-2 font-black">{row.color}</td>
+                  <td className="border-b border-line/60 px-3 py-2">{row.size}</td>
+                  <td className="border-b border-line/60 px-3 py-2">{row.defectType}</td>
+                  <td className="border-b border-line/60 px-3 py-2 text-right font-black text-blue-800">{row.quantity}</td>
                 </tr>
               ))}
             </tbody>
@@ -481,8 +481,8 @@ export default function ReportPage() {
       </section>
 
       <section className="panel overflow-hidden">
-        <div className="border-b border-line bg-slate-950 px-4 py-3 text-white">
-          <h2 className="font-black">问题类别统计</h2>
+      <div className="border-b border-line bg-canvas px-4 py-3">
+          <h2 className="font-semibold text-ink">问题类别统计</h2>
         </div>
         <div className="overflow-x-auto">
           <table className="min-w-[980px] w-full border-collapse text-sm">
@@ -549,7 +549,7 @@ export default function ReportPage() {
       </section>
 
       <div className="sticky bottom-16 grid grid-cols-4 gap-3 rounded border border-line bg-white p-3 shadow-panel md:bottom-4">
-        {message && <p className="col-span-4 rounded bg-blue-50 px-3 py-2 text-sm font-bold text-blue-800">{message}</p>}
+        {message && <p className="col-span-4 rounded-xl bg-canvas px-3 py-2 text-sm font-semibold text-steel">{message}</p>}
         <Link href={`/inspect/${orderId}`} className="secondary-btn">
           检品
         </Link>

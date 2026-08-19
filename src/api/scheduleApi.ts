@@ -92,6 +92,8 @@ export function runAutoSchedule(reason?: string) {
       itemInbound: number;
       orderInbound: number;
       submittedQuantity: number;
+      inspectedCompleted: number;
+      alreadyScheduled: number;
       reason: string;
     }>;
   }>("/api/schedule/plan/run", { method: "POST", body: JSON.stringify({ reason }) });

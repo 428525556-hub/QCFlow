@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useCurrentProfile } from "@/components/AuthGuard";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -55,7 +55,7 @@ export default function ClientOrderDetailPage() {
         </Link>
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <h1 className="truncate text-2xl font-black tracking-normal text-blue-950">{order.po_number}</h1>
+            <h1 className="truncate text-2xl font-semibold tracking-tight text-ink">{order.po_number}</h1>
             <p className="mt-1 text-sm text-blue-700">
               {order.customer_name} / 番号 {order.sku} / 出货 {order.shipping_date ?? "-"}
             </p>

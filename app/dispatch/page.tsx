@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { StatusBadge } from "@/components/StatusBadge";
 import { shortDate } from "@/lib/format";
@@ -46,11 +46,11 @@ export default function DispatchPage() {
   return (
     <div className="space-y-4">
       <div>
-        <div className="mb-2 inline-flex items-center gap-2 rounded bg-blue-100 px-2.5 py-1 text-xs font-black text-blue-900">
+        <div className="mb-2 inline-flex items-center gap-2 rounded bg-machine/10 px-2.5 py-1 text-xs font-semibold text-machine">
           <Truck size={14} />
           出货
         </div>
-        <h1 className="text-2xl font-black tracking-normal text-blue-950">出货运输</h1>
+        <h1 className="text-2xl font-semibold tracking-tight text-ink">出货运输</h1>
         <p className="mt-1 text-sm text-blue-700">货物搬上车辆或集装箱时，确认总箱数、总数量、差异和现场照片。</p>
       </div>
 

@@ -1,7 +1,8 @@
-"use client";
+﻿"use client";
 
 import { useCurrentProfile } from "@/components/AuthGuard";
 import { isAdminEmail } from "@/lib/security";
+import { SkeletonRows } from "@/components/ui";
 import type { InspectionTeam, ProductionCalendarEntry, StyleCategory, TeamWorkException } from "@/lib/types";
 import {
   createInspectionTeam,
@@ -221,16 +222,20 @@ export default function ScheduleTeamsPage() {
   return (
     <div className="space-y-5">
       <div>
-        <div className="mb-2 inline-flex items-center gap-2 rounded bg-blue-100 px-2.5 py-1 text-xs font-black text-blue-900">
+        <div className="mb-2 inline-flex items-center gap-2 rounded bg-machine/10 px-2.5 py-1 text-xs font-semibold text-machine">
           <Factory size={14} />
           管理员
         </div>
-        <h1 className="text-2xl font-black tracking-normal text-blue-950">班组与产能管理</h1>
+        <h1 className="text-2xl font-semibold tracking-tight text-ink">班组与产能管理</h1>
         <p className="mt-1 text-sm text-blue-700">配置检品班组、款式系数、公司工作日历与班组例外。产能全部可配置，不会写死在代码里。</p>
       </div>
 
       {message && <p className="rounded bg-blue-50 px-3 py-2 text-sm font-bold text-blue-800">{message}</p>}
-      {loading && <div className="panel p-5 text-sm text-slate-500">正在加载...</div>}
+      {loading && (
+        <div className="rounded-2xl border border-line/80 bg-white shadow-soft">
+          <SkeletonRows rows={5} />
+        </div>
+      )}
 
       {!loading && (
         <>

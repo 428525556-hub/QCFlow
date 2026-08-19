@@ -713,11 +713,11 @@ export default function ManageOrdersPage() {
   return (
     <div className="space-y-4">
       <div>
-        <div className="mb-2 inline-flex items-center gap-2 rounded bg-blue-100 px-2.5 py-1 text-xs font-black text-blue-900">
+        <div className="mb-2 inline-flex items-center gap-2 rounded bg-machine/10 px-2.5 py-1 text-xs font-semibold text-machine">
           <Archive size={14} />
           管理员
         </div>
-        <h1 className="text-2xl font-black tracking-normal text-blue-950">总单管理</h1>
+        <h1 className="text-2xl font-semibold tracking-tight text-ink">总单管理</h1>
         <p className="mt-1 text-sm text-blue-700">默认只看客户、订单号、番号和总数；展开后编辑颜色、尺码和数量。删除会先进入回收站。</p>
       </div>
       {message && (

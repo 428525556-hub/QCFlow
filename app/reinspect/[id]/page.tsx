@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useCurrentUser } from "@/components/AuthGuard";
 import { shortDate } from "@/lib/format";
@@ -150,7 +150,7 @@ export default function ReinspectPage() {
             <ArrowLeft size={16} />
             返回订单
           </Link>
-          <h1 className="truncate text-2xl font-black tracking-normal text-blue-950">二次检品</h1>
+          <h1 className="truncate text-2xl font-semibold tracking-tight text-ink">二次检品</h1>
           <p className="mt-1 text-sm text-blue-700">
             {order.customer_name} / {order.po_number} / {order.sku}
           </p>

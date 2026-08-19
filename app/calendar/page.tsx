@@ -35,16 +35,10 @@ export default function CalendarPage() {
 
   return (
     <div className="space-y-4">
-      <section className="rounded border border-slate-800 bg-slate-950 p-5 text-white">
-        <div className="flex items-center gap-3">
-          <div className="grid h-11 w-11 place-items-center rounded bg-safety text-slate-950">
-            <CalendarDays size={22} />
-          </div>
-          <div>
-            <h1 className="text-2xl font-black tracking-normal">订单日历</h1>
-            <p className="mt-1 text-sm text-slate-300">查看每天入库了多少订单，以及哪些订单要出货。</p>
-          </div>
-        </div>
+      <section>
+        <p className="text-[13px] font-semibold text-steel">订单日历</p>
+        <h1 className="mt-1 text-2xl font-semibold tracking-tight">订单日历</h1>
+        <p className="mt-1 text-sm text-steel">查看每天入库了多少订单，以及哪些订单要出货。</p>
       </section>
 
       <section className="panel overflow-hidden">
