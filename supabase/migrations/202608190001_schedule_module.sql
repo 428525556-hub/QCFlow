@@ -68,7 +68,8 @@ alter table public.orders
   add column if not exists estimated_inspection_date date,
   add column if not exists inspection_standard text,
   add column if not exists priority text not null default '普通',
-  add column if not exists assigned_team_id uuid references public.inspection_teams(id) on delete set null;
+  add column if not exists assigned_team_id uuid references public.inspection_teams(id) on delete set null,
+  add column if not exists direct_ship boolean not null default false;
 
 alter table public.orders
   drop constraint if exists orders_priority_check;

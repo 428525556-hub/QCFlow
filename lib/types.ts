@@ -48,6 +48,7 @@ export type Order = {
   inspection_standard: string | null;
   priority: SchedulePriority;
   assigned_team_id: string | null;
+  direct_ship: boolean;
   status: OrderStatus;
 };
 
@@ -320,6 +321,7 @@ export type Database = {
           inspection_standard?: string | null;
           priority?: SchedulePriority;
           assigned_team_id?: string | null;
+          direct_ship?: boolean;
         };
         Update: Partial<Omit<Order, "id" | "created_at" | "user_id">>;
         Relationships: [];

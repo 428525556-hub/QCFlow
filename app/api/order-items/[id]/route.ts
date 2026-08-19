@@ -18,8 +18,8 @@ export const PATCH = withApiHandler<Context>(async (request, { params }) => {
 
   const next: OrderItemUpdate = { ...payload };
 
-  // 入库数量自动同步为可送检数量（数量跟随入库，状态不自动改变）；
-  // 若本次同时人工指定了送检数量，则以人工值为准
+  // 入库数量自动同步为可送检数量，并自动置为"可送检"状态（可直接参与排程）；
+  // 若本次同时人工指定了送检数量/状态，则以人工值为准
   if (next.inbound_quantity !== undefined) {
     const nextInbound = Math.max(0, Math.floor(Number(next.inbound_quantity) || 0));
     const maxQuantity = Number(existing.quantity || 0);
@@ -27,6 +27,9 @@ export const PATCH = withApiHandler<Context>(async (request, { params }) => {
     next.inbound_quantity = nextInbound;
     if (next.submitted_quantity === undefined) {
       next.submitted_quantity = Math.min(nextInbound, maxQuantity);
+    }
+    if (next.submit_status === undefined) {
+      next.submit_status = "ready";
     }
   }
 

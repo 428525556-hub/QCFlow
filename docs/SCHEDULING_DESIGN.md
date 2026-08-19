@@ -73,6 +73,7 @@
 | `inspection_standard` | text | 检品标准（如 AQL 2.5），仅展示 |
 | `priority` | text default '普通' | 普通 / 加急 / 特急，check 约束 |
 | `assigned_team_id` | uuid → inspection_teams | 指定检品班组，可空 |
+| `direct_ship` | boolean default false | 直接出货：标记后不参与检品排程 |
 
 > `shipping_date`（出货日期）继续作为 **Hard Deadline**；`inbound_date`（来货日期）不变。
 
@@ -87,11 +88,11 @@
 
 约束：`submitted_quantity <= quantity`；引擎内部再取 `min(submitted_quantity, inbound_quantity)`。
 
-**送检规则（已确认）**：
-- 入库更新时 `submitted_quantity` 自动同步为 `min(入库数量, 订单数量)`，但**不改变** `submit_status`（不自动置为可送检）；
-- 新建明细默认 `submit_status='pending'`（待送检），管理员标记 `ready`（可送检）后才参与排程；
-- 管理员可随时人工调整 `submitted_quantity` 与 `submit_status`（含暂停送检 paused、批量按已入库送检）；
-- 存量数据一次性回填：`submitted_quantity = inbound_quantity`、`submit_status='ready'`（仅初始化，后续新增入库不再自动送检）。
+**送检规则（已确认，2026-08-19 修订）**：
+- 入库更新时 `submitted_quantity` 自动同步为 `min(入库数量, 订单数量)`，且 `submit_status` **自动置为 `ready`（可送检）**，直接可参与排程；
+- 新建明细默认 `submit_status='pending'`（待送检）、数量 0；一旦发生入库即自动变为可送检；
+- 管理员可随时人工调整 `submitted_quantity` 与 `submit_status`（待送检/可送检/暂停送检）；
+- 标记 `direct_ship`（直接出货）的订单完全不参与排程引擎。
 
 ### 3.3 新增表（7 张）
 
@@ -576,6 +577,6 @@ AI 到货/返检预测、排程模拟对比、甘特图、消息通知。
 1. **排程粒度**：按订单明细（款号/颜色/尺码）排程，订单级只做汇总展示；
 2. **完成量口径**：现场打卡追加写入进度记录（计划/完成/差异三列展示），首次排程用检品记录推导值初始化；
 3. **三层 Deadline**：预计可检（最早）→ 送货（优先）→ 出货（硬上限），送货不满足但有出货缓冲显示橙色+缓冲天数；
-4. **送检登记策略（已确认）**：入库数量自动同步到 `submitted_quantity`（数量跟随），但送检状态默认待送检、由管理员标记可送检后才参与排程；管理员可随时调整数量与状态；存量订单一次性回填为可送检（初始化）；
+4. **送检登记策略（已确认，2026-08-19 修订）**：入库时自动同步 `submitted_quantity` 并自动置为"可送检"，可直接参与排程；管理员可随时调整数量与状态；新增"直接出货"选项，标记订单不进排程；
 5. **导航调整**：手机底部导航改为 首页/工作台/订单/排程，日历保留在工作台入口；
 6. **返检**：仅人工创建，不做自动预测。

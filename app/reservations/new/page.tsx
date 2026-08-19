@@ -62,6 +62,7 @@ type ReservationForm = {
   shipping_date: string;
   inspection_plan: InspectionPlan;
   reservation_remark: string;
+  direct_ship: boolean;
 };
 
 function createSize(): SizeForm {
@@ -176,7 +177,8 @@ export default function NewReservationPage() {
     inbound_date: "",
     shipping_date: "",
     inspection_plan: "both",
-    reservation_remark: ""
+    reservation_remark: "",
+    direct_ship: false
   });
   const [reservationMode, setReservationMode] = useState<ReservationMode>("quantity");
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrderForm[]>([createPurchaseOrder()]);
@@ -433,6 +435,7 @@ export default function NewReservationPage() {
       shipping_date: form.shipping_date || null,
       inspection_plan: form.inspection_plan,
       reservation_remark: form.reservation_remark.trim() || null,
+      direct_ship: form.direct_ship,
       po_number: uniquePoNumbers.length === 1 ? uniquePoNumbers[0] : "多订单号",
       sku: uniqueSkus.length === 1 ? uniqueSkus[0] : "多货号",
       color: uniqueColors.length === 1 ? uniqueColors[0] : "多颜色",
@@ -578,6 +581,15 @@ export default function NewReservationPage() {
               <label className="label" htmlFor="shipping_date">出货日期</label>
               <input id="shipping_date" className="field mt-2" type="date" value={form.shipping_date} onChange={(event) => setForm((current) => ({ ...current, shipping_date: event.target.value }))} />
             </div>
+            <label className="flex items-center gap-2 text-sm font-bold text-slate-700 md:col-span-2">
+              <input
+                type="checkbox"
+                className="h-4 w-4"
+                checked={form.direct_ship}
+                onChange={(event) => setForm((current) => ({ ...current, direct_ship: event.target.checked }))}
+              />
+              直接出货（不参与检品排程）
+            </label>
           </div>
         </section>
 

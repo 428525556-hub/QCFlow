@@ -38,6 +38,7 @@ type EditableOrder = {
   inspection_plan: InspectionPlan;
   reservation_remark: string;
   status: OrderStatus;
+  direct_ship: boolean;
   items: EditableItem[];
   deletedItemIds: string[];
 };
@@ -96,6 +97,7 @@ function buildDraft(order: OrderWithItems): EditableOrder {
     inspection_plan: order.inspection_plan || "both",
     reservation_remark: order.reservation_remark || "",
     status: order.status,
+    direct_ship: order.direct_ship ?? false,
     items,
     deletedItemIds: []
   };
@@ -349,6 +351,7 @@ export default function ManageOrdersPage() {
       inspection_plan: draft.inspection_plan,
       reservation_remark: draft.reservation_remark.trim() || null,
       status: draft.status,
+      direct_ship: draft.direct_ship,
       po_number: uniqueSummary(cleanItems.map((item) => item.po_number), "订单号"),
       sku: uniqueSummary(cleanItems.map((item) => item.sku), "番号"),
       color: uniqueSummary(cleanItems.map((item) => item.color), "颜色"),
@@ -520,6 +523,15 @@ export default function ManageOrdersPage() {
                     onChange={(event) => patchDraft(order.id, { reservation_remark: event.target.value })}
                     placeholder="会显示在检品和X线页面，提醒现场人员"
                   />
+                </label>
+                <label className="flex items-center gap-2 text-sm font-bold text-slate-700 md:col-span-2">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4"
+                    checked={draft.direct_ship}
+                    onChange={(event) => patchDraft(order.id, { direct_ship: event.target.checked })}
+                  />
+                  直接出货（不参与检品排程）
                 </label>
               </div>
             </section>

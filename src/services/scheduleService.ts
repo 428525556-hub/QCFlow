@@ -103,9 +103,11 @@ export async function loadScheduleInputs(
     calendar[exception.date] = day;
   }
 
-  const orderById = new Map(orders.map((order) => [order.id, order]));
+  // 直接出货订单不参与检品排程
+  const schedulableOrders = orders.filter((order) => !order.direct_ship);
+  const orderById = new Map(schedulableOrders.map((order) => [order.id, order]));
   const itemById = new Map(items.map((item) => [item.id, item]));
-  const orderIds = orders.map((order) => order.id);
+  const orderIds = schedulableOrders.map((order) => order.id);
 
   const recordDerivedPassed = buildRecordDerivedPassed(orders, items, records, reinspections);
 
@@ -125,7 +127,7 @@ export async function loadScheduleInputs(
   }
 
   const units: ScheduleUnit[] = [];
-  for (const order of orders) {
+  for (const order of schedulableOrders) {
     for (const item of items.filter((row) => row.order_id === order.id)) {
       const types = typesForPlan(order.inspection_plan);
       for (const type of types) {
@@ -176,7 +178,7 @@ export async function loadScheduleInputs(
 
   const cancelableTaskIds = replaceAuto ? openTasks.filter((task) => !task.locked && task.source === "auto").map((task) => task.id) : [];
 
-  return { today, teams, calendar, units, existingAssignments, orders, items, teamRows, exceptions, cancelableTaskIds };
+  return { today, teams, calendar, units, existingAssignments, orders: schedulableOrders, items, teamRows, exceptions, cancelableTaskIds };
 }
 
 export function typesForPlan(plan: InspectionPlan): InspectionType[] {
