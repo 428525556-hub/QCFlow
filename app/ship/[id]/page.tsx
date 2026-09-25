@@ -1,5 +1,6 @@
 ﻿"use client";
 
+import { Portal } from "@/components/ui";
 import { compareCartonNo, findMissingCartonNos, parseCartonNo, sortByCartonNo } from "@/lib/cartonNumbers";
 import { updateOrder } from "@/src/api/ordersApi";
 import { deleteShipmentCarton, getShipmentOrderData, insertShipmentCarton, insertShipmentItems } from "@/src/api/shipmentApi";
@@ -1216,6 +1217,7 @@ export default function ShipOrderPage() {
       )}
 
       {editorOpen && (
+        <Portal>
         <div className="fixed inset-0 z-50 flex items-end bg-slate-950/45 p-0 md:items-center md:justify-center md:p-6">
           <section className="max-h-[92vh] w-full overflow-hidden rounded-t border border-blue-200 bg-white shadow-2xl md:max-w-2xl md:rounded">
             <div className="flex items-start justify-between gap-3 border-b border-blue-100 bg-blue-50 px-4 py-3">
@@ -1294,6 +1296,7 @@ export default function ShipOrderPage() {
             </div>
           </section>
         </div>
+        </Portal>
       )}
 
       <div className="grid grid-cols-3 gap-2 text-center">

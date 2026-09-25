@@ -64,19 +64,24 @@ button {
   font-variant-numeric: tabular-nums;
 }
 
+/* 层叠顺序约定：30 = 顶部 header，40 = 侧边/底部导航，50 = 遮罩与弹窗，60 = toast 等全局提示。
+   新增浮层请用 <Modal> 或 <Portal> 渲染到 body —— <main> 上任何非 none 的 transform
+   都会成为 position:fixed 后代的包含块，并把浮层困在低层叠上下文里（不居中、随滚动、被导航遮挡）。 */
 @keyframes page-in {
   from {
     opacity: 0;
-    transform: translateY(4px);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
   }
 }
 
+/* fill-mode 用 backwards 而不是 both：
+   both/forwards 会让动画结束后依然处于“填充态”，使 <main> 长期保留层叠上下文，
+   于是 <main> 内浮层的 z-50 永远压不过侧边导航的 z-40；backwards 只保证动画开始前
+   应用起始帧，动画结束后元素回到自然状态，不再产生包含块或层叠上下文。 */
 .page-enter {
-  animation: page-in 0.25s ease-out both;
+  animation: page-in 0.25s ease-out backwards;
 }
 
 @keyframes dialog-in {
@@ -91,7 +96,7 @@ button {
 }
 
 .dialog-enter {
-  animation: dialog-in 0.22s ease-out both;
+  animation: dialog-in 0.22s ease-out backwards;
 }
 
 @keyframes fade-in {
@@ -104,7 +109,15 @@ button {
 }
 
 .fade-in {
-  animation: fade-in 0.2s ease-out both;
+  animation: fade-in 0.2s ease-out backwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page-enter,
+  .dialog-enter,
+  .fade-in {
+    animation: none;
+  }
 }
 
 .modal-backdrop {
@@ -118,7 +131,7 @@ button {
   padding: 1rem;
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
-  animation: fade-in 0.2s ease-out both;
+  animation: fade-in 0.2s ease-out backwards;
 }
 
 .modal-dialog {
