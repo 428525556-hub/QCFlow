@@ -1,4 +1,4 @@
-import { supabase } from "@/src/api/client";
+import { storage } from "@/src/server/storage";
 import { STORAGE_BUCKETS } from "@/src/constants";
 import { getCurrentUser } from "@/src/api/userApi";
 import { compressImageFile } from "@/src/utils";
@@ -10,13 +10,11 @@ export async function uploadCompressedImage(file: File, folder: string) {
 
   const compressed = await compressImageFile(file, { maxSide: 1280, quality: 0.68 });
   const path = `${userId}/${folder}/${Date.now()}-${crypto.randomUUID()}.jpg`;
-  const { error } = await supabase.storage.from(STORAGE_BUCKETS.inspectionPhotos).upload(path, compressed, {
-    cacheControl: "3600",
-    upsert: false,
+  const result = await storage.upload({
+    bucket: STORAGE_BUCKETS.inspectionPhotos,
+    path,
+    file: compressed,
     contentType: compressed.type
   });
-  if (error) throw error;
-
-  const { data } = supabase.storage.from(STORAGE_BUCKETS.inspectionPhotos).getPublicUrl(path);
-  return { path, url: data.publicUrl, size: compressed.size };
+  return { path: result.path, url: result.url, size: compressed.size };
 }

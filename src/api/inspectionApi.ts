@@ -1,7 +1,7 @@
-import { supabase } from "@/src/api/client";
 import { apiRequest } from "@/src/api/httpClient";
 import { getOrderAttachments } from "@/src/api/orderAttachmentsApi";
 import { getOrderById, getOrderItems } from "@/src/api/ordersApi";
+import { storage } from "@/src/server/storage";
 import { STORAGE_BUCKETS } from "@/src/constants";
 import type { Database, InspectionRecord, InspectionStage, ReinspectionRecord } from "@/src/types";
 
@@ -42,14 +42,16 @@ export async function getInspectionWorkspaceData(orderId: string, stage: Inspect
 }
 
 export async function uploadInspectionPhoto(path: string, file: File) {
-  return supabase.storage.from(STORAGE_BUCKETS.inspectionPhotos).upload(path, file, {
-    cacheControl: "3600",
-    upsert: false
-  });
+  try {
+    const result = await storage.upload({ bucket: STORAGE_BUCKETS.inspectionPhotos, path, file });
+    return { error: null, data: { path: result.path } };
+  } catch (error) {
+    return { error: error instanceof Error ? error : new Error(String(error)), data: null };
+  }
 }
 
 export function getInspectionPhotoPublicUrl(path: string) {
-  return supabase.storage.from(STORAGE_BUCKETS.inspectionPhotos).getPublicUrl(path).data.publicUrl;
+  return storage.getPublicUrl(STORAGE_BUCKETS.inspectionPhotos, path);
 }
 
 export async function getReinspectionRecords(orderId: string, ascending = false) {

@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "test": "node --test \"src/services/scheduling/__tests__/*.test.ts\""
+    "test": "node --test \"src/services/scheduling/__tests__/*.test.ts\" \"src/services/__tests__/*.test.ts\" \"src/utils/__tests__/*.test.ts\""
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",

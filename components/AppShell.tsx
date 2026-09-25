@@ -133,8 +133,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         {children}
       </main>
 
-      <nav className="fixed inset-x-0 bottom-0 z-20 border-t border-line/60 bg-white/90 backdrop-blur landscape:inset-x-auto landscape:inset-y-0 landscape:left-0 landscape:z-40 landscape:w-28 landscape:flex-col landscape:border-r landscape:border-t-0">
-        <div className="grid grid-cols-4 landscape:flex landscape:flex-col landscape:justify-center landscape:gap-1 landscape:p-2">
+      <nav className="fixed inset-x-0 bottom-0 z-20 border-t border-line/60 bg-white/90 backdrop-blur portrait:pb-[env(safe-area-inset-bottom)] landscape:inset-x-auto landscape:inset-y-0 landscape:left-0 landscape:z-40 landscape:w-28 landscape:flex-col landscape:border-r landscape:border-t-0">
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(0,1fr))] landscape:flex landscape:flex-col landscape:justify-center landscape:gap-1 landscape:p-2">
           {nav.map((item) => {
             const Icon = item.icon;
             const active = item.href === "/" ? pathname === item.href : pathname === item.href || pathname.startsWith(`${item.href}/`);

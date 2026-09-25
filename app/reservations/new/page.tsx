@@ -1,13 +1,15 @@
 ﻿"use client";
 
 import { useCurrentUser } from "@/components/AuthGuard";
+import { ExcelImportModal } from "@/components/ExcelImportModal";
 import { parseCartonNo } from "@/lib/cartonNumbers";
 import type { InspectionPlan } from "@/lib/types";
 import { insertOrderAttachments, uploadOrderAttachmentFile } from "@/src/api/orderAttachmentsApi";
 import { createOrder, deleteOrder as deleteOrderById, insertOrderItems } from "@/src/api/ordersApi";
 import { insertReservationCartonPlan } from "@/src/api/shipmentApi";
+import { downloadImportTemplate } from "@/src/api/excelImportApi";
 import { createSafeId, safeFileName } from "@/src/utils";
-import { FileSpreadsheet, Layers3, PackageSearch, Plus, Save, Trash2, Upload } from "lucide-react";
+import { Download, FileSpreadsheet, FileUp, Layers3, PackageSearch, Plus, Save, Trash2, Upload } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { ChangeEvent, FormEvent, useMemo, useState } from "react";
 
@@ -60,6 +62,7 @@ type ReservationForm = {
   factory_name: string;
   inbound_date: string;
   shipping_date: string;
+  shipping_date_tbd: boolean;
   inspection_plan: InspectionPlan;
   reservation_remark: string;
   direct_ship: boolean;
@@ -176,6 +179,7 @@ export default function NewReservationPage() {
     factory_name: "",
     inbound_date: "",
     shipping_date: "",
+    shipping_date_tbd: false,
     inspection_plan: "both",
     reservation_remark: "",
     direct_ship: false
@@ -186,6 +190,7 @@ export default function NewReservationPage() {
   const [attachments, setAttachments] = useState<File[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [importOpen, setImportOpen] = useState(false);
 
   const quantityModeTotal = useMemo(() => purchaseOrders.reduce((sum, order) => sum + orderTotal(order), 0), [purchaseOrders]);
   const cartonModeTotal = useMemo(() => cartonPlanGroups.reduce((sum, group) => sum + cartonGroupTotal(group), 0), [cartonPlanGroups]);
@@ -432,7 +437,8 @@ export default function NewReservationPage() {
       customer_name: form.customer_name.trim(),
       factory_name: form.factory_name.trim(),
       inbound_date: form.inbound_date || null,
-      shipping_date: form.shipping_date || null,
+      shipping_date: form.shipping_date_tbd ? null : form.shipping_date || null,
+      shipping_date_tbd: form.shipping_date_tbd,
       inspection_plan: form.inspection_plan,
       reservation_remark: form.reservation_remark.trim() || null,
       direct_ship: form.direct_ship,
@@ -557,8 +563,22 @@ export default function NewReservationPage() {
           <PackageSearch size={14} />
           预约检品
         </div>
-        <h1 className="text-2xl font-semibold tracking-tight text-ink">创建预约总单</h1>
-        <p className="mt-1 text-sm text-blue-700">按客户、工厂、日期建立总单，再按订单号、货号、颜色、尺码录入明细。</p>
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight text-ink">创建预约总单</h1>
+            <p className="mt-1 text-sm text-steel">按客户、工厂、日期建立总单，再按订单号、货号、颜色、尺码录入明细。</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={() => downloadImportTemplate()} className="secondary-btn h-9 text-[13px]">
+              <Download size={15} />
+              下载Excel模板
+            </button>
+            <button type="button" onClick={() => setImportOpen(true)} className="primary-btn h-9 text-[13px]">
+              <FileUp size={15} />
+              Excel 批量导入
+            </button>
+          </div>
+        </div>
       </div>
 
       <form onSubmit={submit} className="space-y-4">
@@ -579,7 +599,23 @@ export default function NewReservationPage() {
             </div>
             <div>
               <label className="label" htmlFor="shipping_date">出货日期</label>
-              <input id="shipping_date" className="field mt-2" type="date" value={form.shipping_date} onChange={(event) => setForm((current) => ({ ...current, shipping_date: event.target.value }))} />
+              <input
+                id="shipping_date"
+                className="field mt-2"
+                type="date"
+                value={form.shipping_date}
+                disabled={form.shipping_date_tbd}
+                onChange={(event) => setForm((current) => ({ ...current, shipping_date: event.target.value, shipping_date_tbd: false }))}
+              />
+              <label className="mt-2 flex items-center gap-2 text-sm font-bold text-slate-700">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4"
+                  checked={form.shipping_date_tbd}
+                  onChange={(event) => setForm((current) => ({ ...current, shipping_date_tbd: event.target.checked, shipping_date: event.target.checked ? "" : current.shipping_date }))}
+                />
+                出货日期待定
+              </label>
             </div>
             <label className="flex items-center gap-2 text-sm font-bold text-slate-700 md:col-span-2">
               <input
@@ -875,6 +911,8 @@ export default function NewReservationPage() {
           保存预约总单：{totalQuantity} 双
         </button>
       </form>
+
+      <ExcelImportModal open={importOpen} onClose={() => setImportOpen(false)} />
     </div>
   );
 }

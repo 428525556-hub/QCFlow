@@ -2,11 +2,15 @@
 
 import { StatusBadge } from "@/components/StatusBadge";
 import { useCurrentProfile, useCurrentUser } from "@/components/AuthGuard";
+import { Modal } from "@/components/ui";
 import { ADMIN_EMAIL } from "@/lib/security";
 import { ORDER_STATUSES } from "@/src/constants";
 import type { InspectionPlan, Order, OrderItem, OrderStatus, SubmitStatus } from "@/lib/types";
-import { deleteOrder as deleteOrderById, deleteOrderItems, getOrdersWithItems, insertOrderItems, restoreOrder as restoreOrderById, softDeleteOrder, syncOrderItemIdentity, updateOrder, updateOrderItem } from "@/src/api/ordersApi";
-import { Archive, ChevronDown, ChevronRight, Plus, RotateCcw, Save, ShieldAlert, Trash2, Truck, Undo2 } from "lucide-react";
+import { bulkDeleteOrders, deleteOrder as deleteOrderById, deleteOrderItems, getOrdersWithItems, insertOrderItems, restoreOrder as restoreOrderById, softDeleteOrder, syncOrderItemIdentity, updateOrder, updateOrderItem } from "@/src/api/ordersApi";
+import { getShipmentBatches, upsertShipmentBatch } from "@/src/api/shipmentBatchesApi";
+import { buildBatchMap, buildShipmentBatchGroups, groupOrdersByCustomer } from "@/src/services/orderService";
+import type { ShipmentBatch } from "@/lib/types";
+import { Archive, CalendarDays, ChevronDown, ChevronRight, Plus, RotateCcw, Save, ShieldAlert, Trash2, Truck, Undo2 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
@@ -141,11 +145,27 @@ export default function ManageOrdersPage() {
   const profile = useCurrentProfile();
   const isAdmin = user?.email === ADMIN_EMAIL || profile?.role === "admin";
   const [orders, setOrders] = useState<OrderWithItems[]>([]);
+  const [batches, setBatches] = useState<ShipmentBatch[]>([]);
   const [drafts, setDrafts] = useState<Record<string, EditableOrder>>({});
+  const [batchDrafts, setBatchDrafts] = useState<Record<string, { batch_no: string; remark: string }>>({});
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [savingBatch, setSavingBatch] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [expandedOrders, setExpandedOrders] = useState<Record<string, boolean>>({});
+  const [batchMode, setBatchMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [expandedCustomers, setExpandedCustomers] = useState<Record<string, boolean>>({});
+  const [expandedDates, setExpandedDates] = useState<Record<string, boolean>>({});
+  const [deleting, setDeleting] = useState(false);
+  const [bulkConfirm, setBulkConfirm] = useState<null | {
+    kind: "customer" | "date" | "orders";
+    customerName: string;
+    shippingDate: string | null;
+    orderIds: string[];
+    orderCount: number;
+    totalQuantity: number;
+  }>(null);
 
   async function load() {
     if (!isAdmin) {
@@ -154,7 +174,8 @@ export default function ManageOrdersPage() {
     }
 
     setLoading(true);
-    const { data, error } = await getOrdersWithItems(true);
+    const [orderResult, batchResult] = await Promise.all([getOrdersWithItems(true), getShipmentBatches()]);
+    const { data, error } = orderResult;
 
     if (error || !data) {
       setMessage(`${error?.message}。请确认数据表和管理员权限 SQL 已执行。`);
@@ -166,6 +187,7 @@ export default function ManageOrdersPage() {
 
     setOrders(nextOrders);
     setDrafts(Object.fromEntries(nextOrders.map((order) => [order.id, buildDraft(order)])));
+    setBatches(batchResult.data ?? []);
     setLoading(false);
   }
 
@@ -175,9 +197,12 @@ export default function ManageOrdersPage() {
   }, [isAdmin]);
 
   const normalOrders = useMemo(() => orders.filter((order) => !order.deleted_at), [orders]);
-  const activeOrders = useMemo(() => normalOrders.filter((order) => !isCompleted(order)), [normalOrders]);
-  const shippedOrders = useMemo(() => normalOrders.filter((order) => isCompleted(order)), [normalOrders]);
   const trashedOrders = useMemo(() => orders.filter((order) => Boolean(order.deleted_at)), [orders]);
+  const batchMap = useMemo(() => buildBatchMap(batches), [batches]);
+  const batchGroups = useMemo(() => buildShipmentBatchGroups(normalOrders, batchMap), [normalOrders, batchMap]);
+  const customerGroups = useMemo(() => groupOrdersByCustomer(normalOrders, new Map()), [normalOrders]);
+  const selectedOrders = useMemo(() => normalOrders.filter((order) => selectedIds.has(order.id)), [normalOrders, selectedIds]);
+  const selectedQuantity = useMemo(() => selectedOrders.reduce((sum, order) => sum + Number(order.quantity || 0), 0), [selectedOrders]);
 
   function patchDraft(orderId: string, patch: Partial<EditableOrder>) {
     setDrafts((current) => ({
@@ -187,6 +212,125 @@ export default function ManageOrdersPage() {
         ...patch
       }
     }));
+  }
+
+  function toggleCustomer(customerName: string) {
+    setExpandedCustomers((current) => ({ ...current, [customerName]: !(current[customerName] ?? true) }));
+  }
+
+  function toggleDate(dateKey: string) {
+    setExpandedDates((current) => ({ ...current, [dateKey]: !(current[dateKey] ?? false) }));
+  }
+
+  function toggleSelect(orderId: string) {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(orderId)) next.delete(orderId);
+      else next.add(orderId);
+      return next;
+    });
+  }
+
+  function toggleDateSelect(orderIds: string[]) {
+    const allSelected = orderIds.every((id) => selectedIds.has(id));
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      for (const id of orderIds) {
+        if (allSelected) next.delete(id);
+        else next.add(id);
+      }
+      return next;
+    });
+  }
+
+  function requestCustomerDelete(group: { customerName: string; orderCount: number; totalQuantity: number }) {
+    setBulkConfirm({ kind: "customer", customerName: group.customerName, shippingDate: null, orderIds: [], orderCount: group.orderCount, totalQuantity: group.totalQuantity });
+  }
+
+  function requestDateDelete(group: { customerName: string; shippingDate: string | null; orderCount: number; totalQuantity: number }) {
+    setBulkConfirm({ kind: "date", customerName: group.customerName, shippingDate: group.shippingDate, orderIds: [], orderCount: group.orderCount, totalQuantity: group.totalQuantity });
+  }
+
+  function requestSelectedDelete() {
+    if (selectedOrders.length === 0) return;
+    setBulkConfirm({
+      kind: "orders",
+      customerName: "",
+      shippingDate: null,
+      orderIds: selectedOrders.map((order) => order.id),
+      orderCount: selectedOrders.length,
+      totalQuantity: selectedQuantity
+    });
+  }
+
+  async function confirmBulkDelete() {
+    if (!bulkConfirm || deleting) return;
+    setDeleting(true);
+    setMessage("");
+
+    const payload =
+      bulkConfirm.kind === "orders"
+        ? { orderIds: bulkConfirm.orderIds }
+        : bulkConfirm.kind === "date"
+          ? { customerName: bulkConfirm.customerName, shippingDate: bulkConfirm.shippingDate ?? undefined }
+          : { customerName: bulkConfirm.customerName };
+
+    const { data, error } = await bulkDeleteOrders(payload);
+    setDeleting(false);
+    setBulkConfirm(null);
+
+    if (error) {
+      setMessage(`${error.message}。批量删除失败，请重试。`);
+      return;
+    }
+    if (!data) {
+      setMessage("批量删除失败：服务端未返回结果。");
+      return;
+    }
+
+    const blockedText =
+      data.blocked.length > 0
+        ? `；${data.blocked.length} 单因已产生业务记录被保护（${data.blocked
+            .slice(0, 3)
+            .map((item) => item.po_number)
+            .join("、")}${data.blocked.length > 3 ? " 等" : ""}）`
+        : "";
+    setMessage(`已删除 ${data.deleted} 个订单，共 ${data.deletedQuantity} 双。${blockedText}`);
+    setSelectedIds(new Set());
+    await load();
+  }
+
+  function patchBatchDraft(key: string, patch: Partial<{ batch_no: string; remark: string }>) {
+    setBatchDrafts((current) => ({
+      ...current,
+      [key]: {
+        ...(current[key] ?? { batch_no: "", remark: "" }),
+        ...patch
+      }
+    }));
+  }
+
+  async function saveBatch(key: string, group: { customerName: string; shippingDate: string | null }) {
+    if (!group.shippingDate) {
+      setMessage("未设置出货日期的订单无法建立出货批次，请先给订单设置出货日期。");
+      return;
+    }
+    const draft = batchDrafts[key] ?? { batch_no: "", remark: "" };
+    setSavingBatch(key);
+    setMessage("");
+    const { error } = await upsertShipmentBatch({
+      customer_name: group.customerName,
+      shipping_date: group.shippingDate,
+      batch_no: draft.batch_no.trim() || null,
+      remark: draft.remark.trim() || null
+    });
+    setSavingBatch(null);
+    if (error) {
+      setMessage(`${error.message}。保存出货批次失败，请确认已执行 shipment_batches 建表 SQL。`);
+      return;
+    }
+    setMessage("出货批次已保存。");
+    await load();
   }
 
   function patchItem(orderId: string, itemId: string, patch: Partial<EditableItem>) {
@@ -730,20 +874,192 @@ export default function ManageOrdersPage() {
         <div className="space-y-5">
           <section className="space-y-3">
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-black text-blue-950">现有订单</h2>
-              <span className="rounded bg-blue-100 px-2 py-1 text-xs font-black text-blue-800">{activeOrders.length} 个</span>
+              <h2 className="text-lg font-black text-blue-950">出货批次（总单编号 / 总体备注）</h2>
+              <span className="rounded bg-blue-100 px-2 py-1 text-xs font-black text-blue-800">{batchGroups.length} 批</span>
             </div>
-            {activeOrders.length === 0 && <div className="panel p-4 text-sm text-slate-500">暂无现有订单。</div>}
-            {activeOrders.map(renderOrder)}
+            <p className="text-xs text-slate-500">同一客户 + 同一出货日期的所有订单算一批。在这里填写总单编号（如 CVT260925）和总体备注（如 迪海9月15号出货），保存后订单列表中会显示。</p>
+            {batchGroups.length === 0 && <div className="panel p-4 text-sm text-slate-500">暂无有出货日期的订单。</div>}
+            <div className="space-y-2">
+              {batchGroups.map((group) => {
+                const key = `${group.customerName}|${group.shippingDate ?? "none"}`;
+                const draft = batchDrafts[key] ?? { batch_no: group.batchNo ?? "", remark: group.batchRemark ?? "" };
+                return (
+                  <div key={key} className="rounded-xl border border-line/80 bg-white p-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="rounded bg-blue-700 px-2 py-1 text-xs font-black text-white">{group.customerName}</span>
+                      <span className="inline-flex items-center gap-1 text-xs font-black text-blue-900">
+                        <CalendarDays size={13} />
+                        {group.shippingDate ?? (group.shippingDateTbd ? "待定" : "未设置")}
+                      </span>
+                      <span className="text-xs font-bold text-slate-500">{group.orders.length} 单 / 共 {group.totalQuantity} 双</span>
+                    </div>
+                    <div className="mt-2 grid gap-2 sm:grid-cols-[1fr_1.6fr_auto]">
+                      <input
+                        className="field h-9 px-2 py-1 text-xs"
+                        placeholder="总单编号，如 CVT260925"
+                        value={draft.batch_no}
+                        onChange={(event) => patchBatchDraft(key, { batch_no: event.target.value })}
+                      />
+                      <input
+                        className="field h-9 px-2 py-1 text-xs"
+                        placeholder="总体备注，如 迪海9月15号出货"
+                        value={draft.remark}
+                        onChange={(event) => patchBatchDraft(key, { remark: event.target.value })}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => saveBatch(key, group)}
+                        disabled={savingBatch === key}
+                        className="secondary-btn h-9 px-3 text-xs"
+                      >
+                        <Save size={14} />
+                        {savingBatch === key ? "保存中..." : "保存"}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </section>
 
           <section className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-black text-blue-950">已出货订单</h2>
-              <span className="rounded bg-blue-100 px-2 py-1 text-xs font-black text-blue-800">{shippedOrders.length} 个</span>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <h2 className="text-lg font-black text-blue-950">客户订单</h2>
+                <span className="rounded bg-blue-100 px-2 py-1 text-xs font-black text-blue-800">{normalOrders.length} 个</span>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                {batchMode && <span className="text-xs font-black text-blue-800">已选择 {selectedOrders.length} 个订单 · {selectedQuantity}双</span>}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setBatchMode((value) => !value);
+                    setSelectedIds(new Set());
+                  }}
+                  className={`secondary-btn h-9 px-3 text-xs ${batchMode ? "border-machine text-machine" : ""}`}
+                >
+                  {batchMode ? "退出批量管理" : "批量管理"}
+                </button>
+                {batchMode && (
+                  <button type="button" disabled={selectedOrders.length === 0 || deleting} onClick={requestSelectedDelete} className="secondary-btn h-9 border-red-200 px-3 text-xs text-red-700">
+                    <Trash2 size={14} />
+                    删除选中订单
+                  </button>
+                )}
+              </div>
             </div>
-            {shippedOrders.length === 0 && <div className="panel p-4 text-sm text-slate-500">暂无已出货订单。</div>}
-            {shippedOrders.map(renderOrder)}
+
+            {normalOrders.length === 0 && <div className="panel p-4 text-sm text-slate-500">暂无订单。</div>}
+
+            {customerGroups.map((group) => {
+              const customerExpanded = expandedCustomers[group.customerName] ?? true;
+              const dateGroups = buildShipmentBatchGroups(group.orders, batchMap);
+              return (
+                <section key={group.customerName} className="overflow-hidden rounded-2xl border border-blue-200 bg-blue-50/70">
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => toggleCustomer(group.customerName)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") toggleCustomer(group.customerName);
+                    }}
+                    className="flex cursor-pointer flex-wrap items-center justify-between gap-2 border-b border-blue-200 bg-blue-100/80 px-3 py-2.5"
+                  >
+                    <span className="flex flex-wrap items-center gap-2">
+                      <span className="text-blue-700">{customerExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}</span>
+                      <span className="text-base font-black text-blue-950">{group.customerName}</span>
+                      <span className="text-xs font-bold text-blue-800">{group.orders.length}单 · {group.totalQuantity}双</span>
+                    </span>
+                    {batchMode && (
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          requestCustomerDelete({ customerName: group.customerName, orderCount: group.orders.length, totalQuantity: group.totalQuantity });
+                        }}
+                        disabled={deleting}
+                        className="secondary-btn h-8 border-red-200 px-2.5 text-xs text-red-700"
+                      >
+                        <Trash2 size={13} />
+                        删除该客户全部订单
+                      </button>
+                    )}
+                  </div>
+
+                  {customerExpanded && (
+                    <div className="space-y-2 p-2">
+                      {dateGroups.map((dateGroup) => {
+                        const dateKey = `${dateGroup.customerName}|${dateGroup.shippingDate ?? "none"}`;
+                        const dateExpanded = expandedDates[dateKey] ?? false;
+                        const dateOrderIds = dateGroup.orders.map((order) => order.id);
+                        const allSelected = dateOrderIds.length > 0 && dateOrderIds.every((id) => selectedIds.has(id));
+                        return (
+                          <section key={dateKey} className="overflow-hidden rounded-xl border border-blue-200 bg-white/70">
+                            <div
+                              role="button"
+                              tabIndex={0}
+                              onClick={() => toggleDate(dateKey)}
+                              onKeyDown={(event) => {
+                                if (event.key === "Enter" || event.key === " ") toggleDate(dateKey);
+                              }}
+                              className="flex cursor-pointer flex-wrap items-center justify-between gap-2 px-3 py-2"
+                            >
+                              <span className="flex flex-wrap items-center gap-2">
+                                <span className="text-blue-700">{dateExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</span>
+                                <span className="inline-flex items-center gap-1.5 rounded bg-blue-700 px-2 py-0.5 text-[11px] font-black text-white">
+                                  <CalendarDays size={12} />
+                        {dateGroup.shippingDate ? `出货 ${dateGroup.shippingDate}` : dateGroup.shippingDateTbd ? "出货日期待定" : "未设置出货日期"}
+                                </span>
+                                <span className="text-xs font-bold text-blue-900">{dateGroup.orders.length}单 · {dateGroup.totalQuantity}双</span>
+                              </span>
+                              {batchMode && (
+                                <span className="flex flex-wrap items-center gap-2" onClick={(event) => event.stopPropagation()}>
+                                  <label className="flex cursor-pointer items-center gap-1 text-[11px] font-bold text-slate-600">
+                                    <input type="checkbox" checked={allSelected} onChange={() => toggleDateSelect(dateOrderIds)} />
+                                    全选本日期
+                                  </label>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      requestDateDelete({
+                                        customerName: dateGroup.customerName,
+                                        shippingDate: dateGroup.shippingDate,
+                                        orderCount: dateGroup.orders.length,
+                                        totalQuantity: dateGroup.totalQuantity
+                                      })
+                                    }
+                                    disabled={deleting}
+                                    className="secondary-btn h-8 border-red-200 px-2.5 text-xs text-red-700"
+                                  >
+                                    <Trash2 size={13} />
+                                    删除本日期全部订单
+                                  </button>
+                                </span>
+                              )}
+                            </div>
+                            {dateExpanded && (
+                              <div className="page-enter space-y-2 border-t border-blue-200/70 p-2">
+                                {dateGroup.orders.map((order) => (
+                                  <div key={order.id} className="space-y-1">
+                                    {batchMode && (
+                                      <label className="flex cursor-pointer items-center gap-2 text-xs font-bold text-slate-600">
+                                        <input type="checkbox" checked={selectedIds.has(order.id)} onChange={() => toggleSelect(order.id)} />
+                                        {order.po_number}
+                                      </label>
+                                    )}
+                                    {renderOrder(order as OrderWithItems)}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </section>
+                        );
+                      })}
+                    </div>
+                  )}
+                </section>
+              );
+            })}
           </section>
 
           <section className="space-y-3">
@@ -756,6 +1072,42 @@ export default function ManageOrdersPage() {
           </section>
         </div>
       )}
+
+      <Modal open={Boolean(bulkConfirm)} onClose={() => { if (!deleting) setBulkConfirm(null); }} size="md">
+        {bulkConfirm && (
+          <div>
+            <h3 className="text-lg font-semibold tracking-tight">
+              {bulkConfirm.kind === "customer" && "即将删除该客户全部订单"}
+              {bulkConfirm.kind === "date" && "即将删除该出货日期下全部订单"}
+              {bulkConfirm.kind === "orders" && "即将删除选中订单"}
+            </h3>
+            <div className="mt-4 space-y-2 rounded-xl bg-slate-50 p-4 text-sm">
+              {bulkConfirm.kind === "orders" && bulkConfirm.orderIds.length > 0 && (
+                <p className="max-h-28 overflow-y-auto rounded-lg bg-white p-2 text-[13px] text-slate-700">
+                  {selectedOrders.slice(0, 12).map((order) => order.po_number).join("、")}
+                  {selectedOrders.length > 12 ? ` 等 ${selectedOrders.length} 单` : ""}
+                </p>
+              )}
+              {bulkConfirm.customerName && <p>客户：<span className="font-bold">{bulkConfirm.customerName}</span></p>}
+              {bulkConfirm.shippingDate && <p>出货日期：<span className="font-bold">{bulkConfirm.shippingDate}</span></p>}
+              <p>订单：<span className="font-bold">{bulkConfirm.orderCount} 单</span></p>
+              <p>数量：<span className="font-bold">{bulkConfirm.totalQuantity} 双</span></p>
+            </div>
+            <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-[13px] font-bold text-amber-800">
+              此操作将删除该客户下符合条件的订单及其相关业务数据，请确认。已产生检品/出货/装箱等业务记录的订单会被保护，不会删除。
+            </p>
+            <div className="mt-5 flex justify-end gap-2">
+              <button type="button" disabled={deleting} onClick={() => setBulkConfirm(null)} className="secondary-btn">
+                取消
+              </button>
+              <button type="button" disabled={deleting} onClick={confirmBulkDelete} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-red-600 px-4 text-sm font-semibold text-white transition-colors duration-150 hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50">
+                <Trash2 size={15} />
+                {deleting ? "删除中..." : "确认删除"}
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

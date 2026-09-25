@@ -37,6 +37,7 @@ export type Order = {
   sku: string;
   inbound_date: string | null;
   shipping_date: string | null;
+  shipping_date_tbd: boolean;
   inspection_plan: InspectionPlan;
   reservation_remark: string | null;
   color: string;
@@ -50,6 +51,16 @@ export type Order = {
   assigned_team_id: string | null;
   direct_ship: boolean;
   status: OrderStatus;
+};
+
+export type ShipmentBatch = {
+  id: string;
+  created_at: string;
+  updated_at: string;
+  customer_name: string;
+  shipping_date: string;
+  batch_no: string | null;
+  remark: string | null;
 };
 
 export type OrderItem = {
@@ -312,7 +323,7 @@ export type Database = {
       };
       orders: {
         Row: Order;
-        Insert: Omit<Order, "id" | "created_at" | "deleted_at" | "delivery_date" | "estimated_inspection_date" | "inspection_standard" | "priority" | "assigned_team_id"> & {
+        Insert: Omit<Order, "id" | "created_at" | "deleted_at" | "delivery_date" | "estimated_inspection_date" | "inspection_standard" | "priority" | "assigned_team_id" | "shipping_date_tbd"> & {
           id?: string;
           created_at?: string;
           deleted_at?: string | null;
@@ -321,6 +332,7 @@ export type Database = {
           inspection_standard?: string | null;
           priority?: SchedulePriority;
           assigned_team_id?: string | null;
+          shipping_date_tbd?: boolean;
           direct_ship?: boolean;
         };
         Update: Partial<Omit<Order, "id" | "created_at" | "user_id">>;
@@ -464,6 +476,12 @@ export type Database = {
         Row: ScheduleChangeLog;
         Insert: Omit<ScheduleChangeLog, "id" | "created_at"> & { id?: string; created_at?: string };
         Update: Partial<Omit<ScheduleChangeLog, "id" | "created_at">>;
+        Relationships: [];
+      };
+      shipment_batches: {
+        Row: ShipmentBatch;
+        Insert: Omit<ShipmentBatch, "id" | "created_at" | "updated_at"> & { id?: string; created_at?: string; updated_at?: string };
+        Update: Partial<Omit<ShipmentBatch, "id" | "created_at" | "updated_at">>;
         Relationships: [];
       };
     };

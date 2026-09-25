@@ -151,6 +151,17 @@ export async function deleteOrder(orderId: string) {
   return apiRequest<{ id: string }>(`/api/orders/${orderId}`, { method: "DELETE" });
 }
 
+export type BulkDeleteResult = {
+  deleted: number;
+  deletedQuantity: number;
+  matched: number;
+  blocked: Array<{ id: string; po_number: string; reason: string }>;
+};
+
+export function bulkDeleteOrders(payload: { orderIds?: string[]; customerName?: string; shippingDate?: string }) {
+  return apiRequest<BulkDeleteResult>("/api/orders/bulk", { method: "DELETE", body: JSON.stringify(payload) });
+}
+
 export async function insertOrderItems(items: OrderItemInsert[]) {
   return apiRequest<OrderItem[]>("/api/order-items", { method: "POST", body: JSON.stringify(items) });
 }

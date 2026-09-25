@@ -1,0 +1,28 @@
+services:
+  qcflow:
+    build:
+      context: .
+      args:
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+    image: qcflow:latest
+    container_name: qcflow
+    restart: unless-stopped
+    ports:
+      - "8443:3000"
+
+  qcflow-pg:
+    image: postgres:16-alpine
+    container_name: qcflow-pg
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: qcflow
+      POSTGRES_PASSWORD: ${PG_PASSWORD}
+      POSTGRES_DB: qcflow
+    volumes:
+      - qcflow_pgdata:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+
+volumes:
+  qcflow_pgdata:

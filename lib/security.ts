@@ -1,4 +1,4 @@
-export const ADMIN_EMAIL = "shuoyuqc@163.com";
+export const ADMIN_EMAIL = process.env.ADMIN_EMAIL?.trim() || "shuoyuqc@163.com";
 
 const INVITE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 

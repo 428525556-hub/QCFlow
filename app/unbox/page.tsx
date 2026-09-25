@@ -2,6 +2,7 @@
 
 import { useCurrentUser } from "@/components/AuthGuard";
 import { PhotoPicker } from "@/components/PhotoPicker";
+import { Modal } from "@/components/ui";
 import { findMissingCartonNos, sortByCartonNo } from "@/lib/cartonNumbers";
 import { shortDate } from "@/lib/format";
 import { getActiveOrders, getOrderItems } from "@/src/api/ordersApi";
@@ -434,17 +435,31 @@ export default function UnboxPage() {
         {message && !editorOpen && <p className="rounded bg-blue-50 px-3 py-2 text-sm font-bold text-blue-800">{message}</p>}
 
         {editorOpen && (
-          <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/45 p-0 md:items-center md:p-6">
-            <div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-t-2xl bg-white p-4 shadow-xl md:rounded-2xl">
-              <div className="mb-4 flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-lg font-black text-blue-950">确认开箱</p>
-                  <p className="text-sm font-bold text-blue-700">确认箱号、颜色、尺码和数量后保存。</p>
-                </div>
-                <button type="button" onClick={() => setEditorOpen(false)} className="grid h-10 w-10 shrink-0 place-items-center rounded border border-blue-200 bg-white text-slate-600">
-                  <X size={18} />
+          <Modal
+            open={editorOpen}
+            onClose={() => setEditorOpen(false)}
+            size="md"
+            footer={
+              <div className="grid grid-cols-2 gap-3">
+                <button type="button" onClick={() => setEditorOpen(false)} className="secondary-btn w-full">
+                  取消
+                </button>
+                <button type="button" onClick={() => saveUnboxingRecord(true)} disabled={saving || !selectedOrder} className="primary-btn w-full">
+                  <Save size={18} />
+                  {saving ? "保存中" : "保存开箱记录"}
                 </button>
               </div>
+            }
+          >
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div>
+                <p className="text-lg font-black text-blue-950">手动开箱</p>
+                <p className="text-sm font-bold text-blue-700">记录箱号、数量和少鞋情况</p>
+              </div>
+              <button type="button" onClick={() => setEditorOpen(false)} className="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-blue-200 bg-white text-slate-600">
+                <X size={16} />
+              </button>
+            </div>
 
         {selectedPlannedItems.length > 0 && (
           <section className="rounded border border-blue-200 bg-white p-3">
@@ -462,7 +477,7 @@ export default function UnboxPage() {
           </section>
         )}
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <label className="space-y-1">
             <span className="label">箱号</span>
             <input className="field" value={cartonNo} onChange={(event) => setCartonNo(event.target.value)} placeholder="例如 A001 / 1" required />
@@ -511,9 +526,20 @@ export default function UnboxPage() {
             <span className="label">实际数量</span>
             <input className="field" type="number" inputMode="numeric" min={0} value={quantity} onChange={(event) => setQuantity(Number(event.target.value || 0))} />
             {selectedItem && (
-              <p className="text-xs font-bold text-blue-700">
-                预约 {selectedItem.carton_count || 0} 箱 / 入数 {selectedItem.quantity_per_carton || 10} / 总数 {selectedItem.quantity}
-              </p>
+              <div className="grid grid-cols-3 gap-2 pt-1">
+                <div className="rounded-lg bg-blue-50 px-2 py-1.5 text-center">
+                  <p className="text-[11px] font-bold text-blue-700">预计</p>
+                  <p className="text-sm font-black text-blue-950">{selectedItem.carton_count || 0} 箱</p>
+                </div>
+                <div className="rounded-lg bg-blue-50 px-2 py-1.5 text-center">
+                  <p className="text-[11px] font-bold text-blue-700">入数</p>
+                  <p className="text-sm font-black text-blue-950">{selectedItem.quantity_per_carton || 10} 双/箱</p>
+                </div>
+                <div className="rounded-lg bg-blue-50 px-2 py-1.5 text-center">
+                  <p className="text-[11px] font-bold text-blue-700">总数</p>
+                  <p className="text-sm font-black text-blue-950">{selectedItem.quantity} 双</p>
+                </div>
+              </div>
             )}
             <div className="grid grid-cols-3 gap-2 pt-1">
               {[10, 5, 15].map((preset) => (
@@ -532,7 +558,19 @@ export default function UnboxPage() {
           </label>
           <label className="space-y-1">
             <span className="label">少鞋数量</span>
-            <input className="field" type="number" inputMode="numeric" min={0} value={shortageQuantity} onChange={(event) => setShortageQuantity(Number(event.target.value || 0))} />
+            <input
+              className="field"
+              type="number"
+              inputMode="numeric"
+              min={0}
+              step={1}
+              value={shortageQuantity}
+              onChange={(event) => {
+                const parsed = Math.floor(Number(event.target.value));
+                setShortageQuantity(Number.isFinite(parsed) && parsed >= 0 ? parsed : 0);
+              }}
+            />
+            {shortageQuantity > quantity && <p className="text-xs font-bold text-red-600">少鞋数量不能超过实际数量（{quantity} 双）</p>}
           </label>
         </div>
 
@@ -543,22 +581,12 @@ export default function UnboxPage() {
 
         <div>
           <p className="label">少鞋照片</p>
-          <PhotoPicker preview={preview} hint="少鞋时拍照上传" onPick={pickPhoto} />
+          <PhotoPicker preview={preview} hint="少鞋时拍照上传" onPick={pickPhoto} compact />
         </div>
 
         {message && <p className="rounded bg-blue-50 px-3 py-2 text-sm font-bold text-blue-800">{message}</p>}
 
-        <div className="grid grid-cols-2 gap-3">
-          <button type="button" onClick={() => setEditorOpen(false)} className="secondary-btn w-full">
-            取消
-          </button>
-          <button type="button" onClick={() => saveUnboxingRecord(true)} disabled={saving || !selectedOrder} className="primary-btn w-full">
-          <Save size={18} />
-          {saving ? "保存中" : "保存开箱记录"}
-          </button>
-        </div>
-            </div>
-          </div>
+          </Modal>
         )}
       </section>
 

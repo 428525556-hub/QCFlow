@@ -5,9 +5,10 @@ import { SkeletonRows } from "@/components/ui";
 import { useLanguage } from "@/components/LanguageProvider";
 import { getOrdersProgressData, subscribeOrdersProgress } from "@/src/api/ordersApi";
 import { getOrderSchedulePlan } from "@/src/api/scheduleApi";
-import { buildOrderProgressMap, getDefaultOrderProgress, groupOrdersByCustomer, type OrderProgress } from "@/src/services/orderService";
-import type { InspectionRecord, Order, ReinspectionRecord } from "@/lib/types";
-import { ArrowRight, BriefcaseBusiness, CalendarDays, ChevronLeft, FileText, PackageCheck, Plus, RefreshCw, ScanLine, Settings2, Truck, X } from "lucide-react";
+import { getShipmentBatches } from "@/src/api/shipmentBatchesApi";
+import { buildBatchMap, buildOrderProgressMap, buildShipmentBatchGroups, getDefaultOrderProgress, groupOrdersByCustomer, type OrderProgress } from "@/src/services/orderService";
+import type { InspectionPlan, InspectionRecord, Order, ReinspectionRecord, ShipmentBatch } from "@/lib/types";
+import { ArrowRight, BriefcaseBusiness, CalendarDays, ChevronDown, ChevronLeft, ChevronRight, FileText, PackageCheck, Plus, RefreshCw, ScanLine, Settings2, Truck, X } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -34,20 +35,30 @@ function ProgressPill({ label, passed, failed, recovered }: { label: string; pas
   );
 }
 
+const INSPECTION_PLAN_LABELS: Record<InspectionPlan, { label: string; className: string }> = {
+  normal: { label: "检品", className: "bg-sky-100 text-sky-800" },
+  xray: { label: "X线", className: "bg-indigo-100 text-indigo-800" },
+  both: { label: "检品+X线", className: "bg-violet-100 text-violet-800" },
+  field: { label: "出差检品", className: "bg-teal-100 text-teal-800" }
+};
+
 export default function OrdersPage() {
   const { t } = useLanguage();
   const [orders, setOrders] = useState<Order[]>([]);
+  const [batches, setBatches] = useState<ShipmentBatch[]>([]);
   const [records, setRecords] = useState<InspectionRecord[]>([]);
   const [reinspections, setReinspections] = useState<ReinspectionRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedCustomerName, setSelectedCustomerName] = useState<string | null>(null);
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [scheduleOrderId, setScheduleOrderId] = useState<string | null>(null);
+  const [expandedDates, setExpandedDates] = useState<Record<string, boolean>>({});
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { data } = await getOrdersProgressData();
+    const [{ data }, batchResult] = await Promise.all([getOrdersProgressData(), getShipmentBatches()]);
     setOrders(data.orders.filter((order) => order.inspection_plan !== "field"));
+    setBatches(batchResult.data ?? []);
     setRecords(data.records);
     setReinspections(data.reinspections);
     setLoading(false);
@@ -61,8 +72,10 @@ export default function OrdersPage() {
 
   const progressByOrder = useMemo(() => buildOrderProgressMap(orders, records, reinspections), [orders, records, reinspections]);
   const customerGroups = useMemo(() => groupOrdersByCustomer(orders, progressByOrder), [orders, progressByOrder]);
+  const batchMap = useMemo(() => buildBatchMap(batches), [batches]);
   const selectedGroup = useMemo(() => customerGroups.find((group) => group.customerName === selectedCustomerName) ?? null, [customerGroups, selectedCustomerName]);
   const selectedOrder = useMemo(() => selectedGroup?.orders.find((order) => order.id === selectedOrderId) ?? null, [selectedGroup, selectedOrderId]);
+  const shipmentGroups = useMemo(() => buildShipmentBatchGroups(selectedGroup?.orders ?? [], batchMap), [selectedGroup, batchMap]);
 
   useEffect(() => {
     if (selectedCustomerName && !selectedGroup) {
@@ -78,7 +91,12 @@ export default function OrdersPage() {
   function openCustomer(customerName: string) {
     setSelectedCustomerName(customerName);
     setSelectedOrderId(null);
+    setExpandedDates({});
     window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function toggleDate(key: string) {
+    setExpandedDates((current) => ({ ...current, [key]: !current[key] }));
   }
 
   function openOrder(orderId: string) {
@@ -144,7 +162,7 @@ export default function OrdersPage() {
           </div>
           <div>
             <dt className="font-bold text-slate-500">{t("shippingDate")}</dt>
-            <dd className="mt-1 truncate font-black text-blue-900">{order.shipping_date ?? "-"}</dd>
+            <dd className="mt-1 truncate font-black text-blue-900">{order.shipping_date_tbd ? "待定" : order.shipping_date ?? "-"}</dd>
           </div>
           <div>
             <dt className="font-bold text-slate-500">{t("sku")}</dt>
@@ -248,31 +266,65 @@ export default function OrdersPage() {
           </div>
         </section>
 
-        {selectedGroup.orders.map((order) => {
-          const progress = progressByOrder.get(order.id) ?? getDefaultOrderProgress(order);
+        {shipmentGroups.map((group) => {
+          const groupKey = `${group.customerName}|${group.shippingDate ?? "none"}`;
+          const expanded = Boolean(expandedDates[groupKey]);
           return (
-            <button key={order.id} type="button" onClick={() => openOrder(order.id)} className="w-full rounded-2xl border border-line/80 bg-white p-4 text-left shadow-soft transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-raised">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="truncate text-lg font-black text-blue-950">{order.po_number}</h3>
-                    <StatusBadge status={order.status} />
-                  </div>
-                  <p className="mt-1 text-sm font-bold text-slate-700">番号：{order.sku || "-"}</p>
-                  <p className="mt-1 text-xs font-bold text-slate-500">出货日期：{order.shipping_date ?? "-"}</p>
-                </div>
-                <div className="shrink-0 text-right">
-                  <p className="text-xs font-bold text-blue-700">数量</p>
-                  <p className="text-xl font-black text-blue-950">{order.quantity}</p>
-                </div>
+          <section key={groupKey} className="overflow-hidden rounded-2xl border border-blue-200 bg-blue-50/70">
+            <button type="button" onClick={() => toggleDate(groupKey)} className="flex w-full flex-wrap items-center justify-between gap-2 border-b border-blue-200 bg-blue-100/80 px-3 py-2.5 text-left transition-colors duration-150 hover:bg-blue-100">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="inline-flex items-center gap-1.5 rounded-lg bg-blue-700 px-2 py-1 text-xs font-black text-white">
+                  <CalendarDays size={13} />
+                  {group.shippingDate ? `出货 ${group.shippingDate}` : group.shippingDateTbd ? "出货日期待定" : "未设置出货日期"}
+                </span>
+                <span className="text-xs font-bold text-blue-900">{group.orders.length} 单</span>
+                <span className="text-xs font-bold text-blue-900">共 {group.totalQuantity} 双</span>
               </div>
-              <div className="mt-3 grid grid-cols-4 gap-2 text-center text-xs font-bold">
-                <div className="rounded bg-blue-50 px-2 py-2 text-blue-800">入库 {order.inbound_quantity || 0}</div>
-                <div className="rounded bg-emerald-50 px-2 py-2 text-emerald-700">检品过 {progress.normalPassed}</div>
-                <div className="rounded bg-indigo-50 px-2 py-2 text-indigo-700">出差过 {progress.fieldPassed}</div>
-                <div className="rounded bg-sky-50 px-2 py-2 text-sky-700">X线过 {progress.xrayPassed}</div>
-              </div>
+              {group.batchNo || group.batchRemark ? (
+                <div className="flex flex-wrap items-center gap-2 text-xs font-bold">
+                  {group.batchNo && <span className="rounded bg-indigo-600 px-2 py-1 text-white">总单 {group.batchNo}</span>}
+                  {group.batchRemark && <span className="rounded bg-white px-2 py-1 text-slate-700">{group.batchRemark}</span>}
+                </div>
+              ) : null}
+              <span className="text-blue-700">
+                {expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+              </span>
             </button>
+            {expanded && (
+            <div className="page-enter space-y-2 p-2">
+              {group.orders.map((order) => {
+                const progress = progressByOrder.get(order.id) ?? getDefaultOrderProgress(order);
+                return (
+                  <button key={order.id} type="button" onClick={() => openOrder(order.id)} className="w-full rounded-xl border border-line/80 bg-white p-4 text-left shadow-soft transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-raised">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h3 className="truncate text-lg font-black text-blue-950">{order.po_number}</h3>
+                          <span className={`shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-bold ${INSPECTION_PLAN_LABELS[order.inspection_plan].className}`}>
+                            {INSPECTION_PLAN_LABELS[order.inspection_plan].label}
+                          </span>
+                          <StatusBadge status={order.status} />
+                        </div>
+                        <p className="mt-1 text-sm font-bold text-slate-700">番号：{order.sku || "-"}</p>
+                        <p className="mt-1 text-xs font-bold text-slate-500">出货日期：{order.shipping_date_tbd ? "待定" : order.shipping_date ?? "-"}</p>
+                      </div>
+                      <div className="shrink-0 text-right">
+                        <p className="text-xs font-bold text-blue-700">数量</p>
+                        <p className="text-xl font-black text-blue-950">{order.quantity}</p>
+                      </div>
+                    </div>
+                    <div className="mt-3 grid grid-cols-4 gap-2 text-center text-xs font-bold">
+                      <div className="rounded bg-blue-50 px-2 py-2 text-blue-800">入库 {order.inbound_quantity || 0}</div>
+                      <div className="rounded bg-emerald-50 px-2 py-2 text-emerald-700">检品过 {progress.normalPassed}</div>
+                      <div className="rounded bg-indigo-50 px-2 py-2 text-indigo-700">出差过 {progress.fieldPassed}</div>
+                      <div className="rounded bg-sky-50 px-2 py-2 text-sky-700">X线过 {progress.xrayPassed}</div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+            )}
+          </section>
           );
         })}
       </div>

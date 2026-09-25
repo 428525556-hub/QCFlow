@@ -1,5 +1,5 @@
-import { percent } from "@/lib/format";
-import type { InspectionRecord, InspectionStage, Order, OrderItem, ReinspectionRecord } from "@/src/types";
+import { percent } from "../../lib/format.ts";
+import type { InspectionRecord, InspectionStage, Order, OrderItem, ReinspectionRecord, ShipmentBatch } from "@/src/types";
 
 export type OrderProgress = {
   baseQuantity: number;
@@ -22,6 +22,16 @@ export type OrderCustomerGroup = {
   fieldFailed: number;
   xrayFailed: number;
   orders: Order[];
+};
+
+export type ShipmentBatchGroup = {
+  customerName: string;
+  shippingDate: string | null;
+  shippingDateTbd: boolean;
+  orders: Order[];
+  totalQuantity: number;
+  batchNo: string | null;
+  batchRemark: string | null;
 };
 
 export type ClientOrderWithDefects = Order & {
@@ -222,6 +232,49 @@ export function groupOrdersByCustomer(orders: Order[], progressByOrder: Map<stri
       orders: [...customerOrders].sort(sortOrdersByShippingDate)
     }))
     .sort((a, b) => a.customerName.localeCompare(b.customerName, "zh-Hans-CN"));
+}
+
+export function buildBatchMap(batches: ShipmentBatch[]): Map<string, ShipmentBatch> {
+  const map = new Map<string, ShipmentBatch>();
+  for (const batch of batches) {
+    map.set(`${batch.customer_name}|${batch.shipping_date}`, batch);
+  }
+  return map;
+}
+
+/**
+ * 把订单按「客户 + 出货日期」分组成出货批次，并附带总单编号/总体备注。
+ * 同一客户 + 同一出货日期 = 同一批。
+ */
+export function buildShipmentBatchGroups(orders: Order[], batchMap: Map<string, ShipmentBatch>): ShipmentBatchGroup[] {
+  const groups = new Map<string, Order[]>();
+  for (const order of orders) {
+    const dateBucket = order.shipping_date ?? (order.shipping_date_tbd ? "__tbd__" : "__none__");
+    const key = `${order.customer_name || "未分类客户"}|${dateBucket}`;
+    groups.set(key, [...(groups.get(key) ?? []), order]);
+  }
+
+  return Array.from(groups.entries())
+    .map(([, groupOrders]) => {
+      const first = groupOrders[0];
+      const shippingDate = first.shipping_date ?? null;
+      const shippingDateTbd = Boolean(first.shipping_date_tbd && !first.shipping_date);
+      const batch = shippingDate ? batchMap.get(`${first.customer_name}|${shippingDate}`) : undefined;
+      return {
+        customerName: first.customer_name || "未分类客户",
+        shippingDate,
+        shippingDateTbd,
+        orders: [...groupOrders].sort(sortOrdersByShippingDate),
+        totalQuantity: groupOrders.reduce((sum, order) => sum + Number(order.quantity || 0), 0),
+        batchNo: batch?.batch_no ?? null,
+        batchRemark: batch?.remark ?? null
+      };
+    })
+    .sort((a, b) => {
+      const aKey = `${a.customerName}|${a.shippingDate ?? "9999-12-31"}`;
+      const bKey = `${b.customerName}|${b.shippingDate ?? "9999-12-31"}`;
+      return aKey.localeCompare(bKey, "zh-Hans-CN");
+    });
 }
 
 export function attachClientOrderDefects(orders: Order[], records: InspectionRecord[]): ClientOrderWithDefects[] {
