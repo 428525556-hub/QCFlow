@@ -61,3 +61,26 @@ export async function apiRequest<T>(path: string, init?: RequestInit): Promise<A
     };
   }
 }
+
+/** multipart/form-data 版本的 API 请求（上传文件用） */
+export async function apiRequestForm<T>(path: string, body: FormData): Promise<ApiResult<T>> {
+  const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+  if (sessionError) return { data: null, error: { message: sessionError.message } };
+
+  const token = sessionData.session?.access_token;
+  if (!token) return { data: null, error: { message: "Unauthorized" } };
+
+  try {
+    const response = await fetch(path, {
+      method: "POST",
+      body,
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    return await readApiResult<T>(response);
+  } catch (error) {
+    return {
+      data: null,
+      error: { message: error instanceof Error ? error.message : "Network request failed" }
+    };
+  }
+}

@@ -1,7 +1,7 @@
 import { apiRequest } from "@/src/api/httpClient";
 import { getOrderAttachments } from "@/src/api/orderAttachmentsApi";
 import { getOrderById, getOrderItems } from "@/src/api/ordersApi";
-import { storage } from "@/src/server/storage";
+import { getStoragePublicUrl, uploadToStorage } from "@/src/api/uploadApi";
 import { STORAGE_BUCKETS } from "@/src/constants";
 import type { Database, InspectionRecord, InspectionStage, ReinspectionRecord } from "@/src/types";
 
@@ -43,7 +43,7 @@ export async function getInspectionWorkspaceData(orderId: string, stage: Inspect
 
 export async function uploadInspectionPhoto(path: string, file: File) {
   try {
-    const result = await storage.upload({ bucket: STORAGE_BUCKETS.inspectionPhotos, path, file });
+    const result = await uploadToStorage(STORAGE_BUCKETS.inspectionPhotos, path, file);
     return { error: null, data: { path: result.path } };
   } catch (error) {
     return { error: error instanceof Error ? error : new Error(String(error)), data: null };
@@ -51,7 +51,7 @@ export async function uploadInspectionPhoto(path: string, file: File) {
 }
 
 export function getInspectionPhotoPublicUrl(path: string) {
-  return storage.getPublicUrl(STORAGE_BUCKETS.inspectionPhotos, path);
+  return getStoragePublicUrl(STORAGE_BUCKETS.inspectionPhotos, path);
 }
 
 export async function getReinspectionRecords(orderId: string, ascending = false) {

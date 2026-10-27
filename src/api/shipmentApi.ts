@@ -1,6 +1,5 @@
-import { supabase } from "@/src/api/client";
 import { apiRequest } from "@/src/api/httpClient";
-import { storage } from "@/src/server/storage";
+import { getStoragePublicUrl, uploadToStorage } from "@/src/api/uploadApi";
 import { STORAGE_BUCKETS } from "@/src/constants";
 import { getOrderById, getOrderItems } from "@/src/api/ordersApi";
 import type { ShipmentCarton, ShipmentItem, UnboxingRecord } from "@/lib/types";
@@ -107,7 +106,7 @@ export async function insertUnboxingRecords(records: UnboxingRecordInsert[]) {
 
 export async function uploadUnboxingPhoto(path: string, file: File) {
   try {
-    const result = await storage.upload({ bucket: STORAGE_BUCKETS.inspectionPhotos, path, file });
+    const result = await uploadToStorage(STORAGE_BUCKETS.inspectionPhotos, path, file);
     return { error: null, data: { path: result.path } };
   } catch (error) {
     return { error: error instanceof Error ? error : new Error(String(error)), data: null };
@@ -115,5 +114,5 @@ export async function uploadUnboxingPhoto(path: string, file: File) {
 }
 
 export function getUnboxingPhotoPublicUrl(path: string) {
-  return storage.getPublicUrl(STORAGE_BUCKETS.inspectionPhotos, path);
+  return getStoragePublicUrl(STORAGE_BUCKETS.inspectionPhotos, path);
 }

@@ -1,17 +1,17 @@
 import { STORAGE_BUCKETS } from "@/src/constants";
-import { supabase } from "@/src/api/client";
-import { storage } from "@/src/server/storage";
+import { apiRequest } from "@/src/api/httpClient";
+import { getStoragePublicUrl, uploadToStorage } from "@/src/api/uploadApi";
 import type { Database } from "@/src/types";
 
 type OrderAttachmentInsert = Database["public"]["Tables"]["order_attachments"]["Insert"];
 
 export function getOrderAttachmentPublicUrl(path: string) {
-  return storage.getPublicUrl(STORAGE_BUCKETS.orderAttachments, path);
+  return getStoragePublicUrl(STORAGE_BUCKETS.orderAttachments, path);
 }
 
 export async function uploadOrderAttachment(path: string, file: File) {
   try {
-    const result = await storage.upload({ bucket: STORAGE_BUCKETS.orderAttachments, path, file });
+    const result = await uploadToStorage(STORAGE_BUCKETS.orderAttachments, path, file);
     return { error: null, data: { path: result.path } };
   } catch (error) {
     return { error: error instanceof Error ? error : new Error(String(error)), data: null };
@@ -32,7 +32,7 @@ function sanitizeStoragePath(path: string) {
 export async function uploadOrderAttachmentFile(path: string, file: File) {
   const safePath = sanitizeStoragePath(path);
   try {
-    const primary = await storage.upload({ bucket: STORAGE_BUCKETS.orderAttachments, path: safePath, file });
+    const primary = await uploadToStorage(STORAGE_BUCKETS.orderAttachments, safePath, file);
     return {
       error: null,
       data: { path: primary.path, publicUrl: primary.url, bucket: STORAGE_BUCKETS.orderAttachments }
@@ -44,7 +44,7 @@ export async function uploadOrderAttachmentFile(path: string, file: File) {
 
     const fallbackPath = safePath.replace(/^([^/]+)\//, "$1/order-attachments/");
     try {
-      const fallback = await storage.upload({ bucket: STORAGE_BUCKETS.inspectionPhotos, path: fallbackPath, file });
+      const fallback = await uploadToStorage(STORAGE_BUCKETS.inspectionPhotos, fallbackPath, file);
       return {
         error: null,
         data: { path: fallback.path, publicUrl: fallback.url, bucket: STORAGE_BUCKETS.inspectionPhotos }
@@ -56,9 +56,12 @@ export async function uploadOrderAttachmentFile(path: string, file: File) {
 }
 
 export async function insertOrderAttachments(attachments: OrderAttachmentInsert[]) {
-  return supabase.from("order_attachments").insert(attachments).select("*");
+  return apiRequest<unknown[]>("/api/order-attachments", {
+    method: "POST",
+    body: JSON.stringify({ attachments })
+  });
 }
 
 export async function getOrderAttachments(orderId: string) {
-  return supabase.from("order_attachments").select("*").eq("order_id", orderId).order("created_at", { ascending: true });
+  return apiRequest<unknown[]>(`/api/order-attachments?orderId=${encodeURIComponent(orderId)}`);
 }
