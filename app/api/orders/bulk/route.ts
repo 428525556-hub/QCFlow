@@ -1,5 +1,10 @@
 import { apiSuccess } from "@/src/server/apiResponse";
 import { withApiHandler } from "@/src/server/apiHandler";
+import { getDataBackend } from "@/src/server/db/backend";
+import { pgError } from "@/src/server/db/pgErrors";
+import { withTransaction } from "@/src/server/db/query";
+import { selectAll } from "@/src/server/db/read";
+import { deleteRowsByIds } from "@/src/server/db/write";
 import { ApiError, databaseError } from "@/src/server/errors";
 import { createRequestSupabaseClient, requireAdminProfile } from "@/src/server/supabaseServer";
 
@@ -30,6 +35,71 @@ export const DELETE = withApiHandler(async (request) => {
 
   if (orderIds.length === 0 && customerName === "") {
     throw new ApiError("缺少删除条件：orderIds 或 customerName", 400, "VALIDATION_ERROR");
+  }
+
+  if (getDataBackend() === "pg") {
+    try {
+      const result = await withTransaction(async (client) => {
+        const conditions = ["deleted_at is null"];
+        const values: unknown[] = [];
+
+        if (orderIds.length > 0) {
+          values.push(orderIds);
+          conditions.push(`id = any($${values.length}::uuid[])`);
+        } else {
+          values.push(customerName);
+          conditions.push(`customer_name = $${values.length}`);
+          if (shippingDate) {
+            values.push(shippingDate);
+            conditions.push(`shipping_date = $${values.length}`);
+          }
+        }
+
+        const matchedOrders = await selectAll<{ id: string; po_number: string; quantity: number }>("orders", {
+          conditions,
+          values,
+          client
+        });
+        if (matchedOrders.length === 0) {
+          return { deleted: 0, deletedQuantity: 0, matched: 0, blocked: [] };
+        }
+
+        const ids = matchedOrders.map((order) => order.id);
+        const blockedIds = new Set<string>();
+        for (const table of BUSINESS_TABLES) {
+          const rows = await selectAll<{ order_id: string }>(table, {
+            conditions: ["order_id = any($1::uuid[])"],
+            values: [ids],
+            client
+          });
+          for (const row of rows) blockedIds.add(row.order_id);
+        }
+
+        const safeOrders = matchedOrders.filter((order) => !blockedIds.has(order.id));
+        const deletedIds = await deleteRowsByIds("orders", safeOrders.map((order) => order.id), client);
+        const deletedSet = new Set(deletedIds);
+
+        return {
+          deleted: deletedIds.length,
+          deletedQuantity: safeOrders
+            .filter((order) => deletedSet.has(order.id))
+            .reduce((sum, order) => sum + Number(order.quantity || 0), 0),
+          matched: matchedOrders.length,
+          blocked: matchedOrders
+            .filter((order) => blockedIds.has(order.id))
+            .map((order) => ({
+              id: order.id,
+              po_number: order.po_number,
+              reason:
+                "该订单已产生检品/复检/开箱/装箱/出货/附件/排程等业务记录，不能直接删除，请先处理相关业务数据"
+            }))
+        };
+      });
+
+      return apiSuccess(result);
+    } catch (error) {
+      throw pgError(error);
+    }
   }
 
   const supabase = createRequestSupabaseClient(request);

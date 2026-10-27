@@ -5,11 +5,24 @@ import { TABLE_COLUMNS } from "../columns.ts";
 import { insertOrderWithItems } from "../orders.ts";
 import { closePool, getPool } from "../pool.ts";
 import { withTransaction } from "../query.ts";
-import { deleteRowsByIds, insertRows } from "../write.ts";
+import { deleteRowsByIds, insertRows, updateRowById } from "../write.ts";
 
 describe("write.insertRows", () => {
   test("拒绝白名单外的字段（不访问数据库）", async () => {
     await assert.rejects(() => insertRows("order_items", [{ evil_column: 1 }]), /不允许的字段/);
+  });
+});
+
+describe("write.updateRowById", () => {
+  test("拒绝更新 id / created_at（不访问数据库）", async () => {
+    await assert.rejects(
+      () => updateRowById("orders", "00000000-0000-4000-8000-000000000000", { id: "x" }),
+      /不可更新/
+    );
+    await assert.rejects(
+      () => updateRowById("orders", "00000000-0000-4000-8000-000000000000", { created_at: new Date() }),
+      /不可更新/
+    );
   });
 });
 
@@ -162,6 +175,71 @@ describe("订单事务（集成，需 DATABASE_URL）", () => {
         await deleteRowsByIds("reinspection_records", [reinspection.id], client);
         const deleted = await deleteRowsByIds("inspection_records", [inspection.id], client);
         assert.deepEqual(deleted, [inspection.id]);
+
+        throw new RollbackSignal();
+      });
+    } catch (error) {
+      if (!(error instanceof RollbackSignal)) throw error;
+    }
+  });
+
+  test("订单更新与删除（事务内，回滚）", { skip: !hasDatabase }, async () => {
+    try {
+      await withTransaction(async (client) => {
+        await client.query(
+          "select set_config('app.user_id', $1, true), set_config('app.user_email', $2, true)",
+          [userId, "parity-test@example.com"]
+        );
+        await client.query(
+          "insert into public.users (id, email) values ($1, $2) on conflict (id) do nothing",
+          [userId, "parity-test@example.com"]
+        );
+
+        const orderId = await insertOrderWithItems(client, {
+          order: {
+            order_type: "reservation",
+            customer_name: "更新测试客户",
+            factory_name: "更新测试工厂",
+            po_number: "PO-UPD-0001",
+            sku: "SKU-UPD-0001",
+            inbound_date: "2026-10-20",
+            shipping_date: "2026-10-30",
+            inspection_plan: "both",
+            reservation_remark: null,
+            color: "黑",
+            size: "42",
+            quantity: 10,
+            inbound_quantity: 0,
+            status: "未开始"
+          },
+          items: [
+            {
+              po_number: "PO-UPD-0001",
+              sku: "SKU-UPD-0001",
+              color: "黑",
+              size: "42",
+              carton_count: 1,
+              quantity_per_carton: 10,
+              quantity: 10,
+              inbound_quantity: 0
+            }
+          ]
+        });
+
+        const updated = await updateRowById<{ status: string }>(
+          "orders",
+          orderId,
+          { status: "检品中" },
+          TABLE_COLUMNS.orders,
+          client
+        );
+        assert.equal(updated?.status, "检品中");
+
+        const deleted = await deleteRowsByIds("orders", [orderId], client);
+        assert.deepEqual(deleted, [orderId]);
+
+        const remaining = await client.query("select count(*)::int as count from public.orders where id = $1", [orderId]);
+        assert.equal(remaining.rows[0].count, 0);
 
         throw new RollbackSignal();
       });

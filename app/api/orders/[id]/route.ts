@@ -1,9 +1,13 @@
 import { apiSuccess } from "@/src/server/apiResponse";
 import { withApiHandler } from "@/src/server/apiHandler";
-import { assertWriteBackendSupported, getDataBackend } from "@/src/server/db/backend";
+import { getDataBackend } from "@/src/server/db/backend";
+import { TABLE_COLUMNS } from "@/src/server/db/columns";
 import { getOrderById } from "@/src/server/db/orders";
+import { pgError } from "@/src/server/db/pgErrors";
+import { deleteRowsByIds, updateRowById } from "@/src/server/db/write";
 import { ApiError, databaseError } from "@/src/server/errors";
 import { createRequestSupabaseClient, requireRequestProfile, requireStaffProfile } from "@/src/server/supabaseServer";
+import type { Order } from "@/lib/types";
 import type { Database } from "@/src/types";
 
 type OrderUpdate = Database["public"]["Tables"]["orders"]["Update"];
@@ -39,8 +43,20 @@ export const GET = withApiHandler<Context>(async (request, { params }) => {
 
 export const PATCH = withApiHandler<Context>(async (request, { params }) => {
   await requireStaffProfile(request);
-  assertWriteBackendSupported();
   const payload = (await request.json()) as OrderUpdate;
+
+  if (getDataBackend() === "pg") {
+    const patch: Record<string, unknown> = { ...payload };
+    delete patch.user_id;
+    try {
+      const updated = await updateRowById<Order>("orders", params.id, patch, TABLE_COLUMNS.orders);
+      if (!updated) throw new ApiError("Order not found or no permission to update", 404, "NOT_FOUND");
+      return apiSuccess(updated);
+    } catch (error) {
+      throw pgError(error);
+    }
+  }
+
   const supabase = createRequestSupabaseClient(request);
   const { data, error } = await supabase.from("orders").update(payload).eq("id", params.id).select("*").maybeSingle();
 
@@ -51,7 +67,17 @@ export const PATCH = withApiHandler<Context>(async (request, { params }) => {
 
 export const DELETE = withApiHandler<Context>(async (request, { params }) => {
   await requireStaffProfile(request);
-  assertWriteBackendSupported();
+
+  if (getDataBackend() === "pg") {
+    try {
+      const deleted = await deleteRowsByIds("orders", [params.id]);
+      if (deleted.length === 0) throw new ApiError("Order not found or no permission to delete", 404, "NOT_FOUND");
+      return apiSuccess({ id: params.id });
+    } catch (error) {
+      throw pgError(error);
+    }
+  }
+
   const supabase = createRequestSupabaseClient(request);
   const { data, error } = await supabase.from("orders").delete().eq("id", params.id).select("id").maybeSingle();
 
