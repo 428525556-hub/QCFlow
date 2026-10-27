@@ -3,7 +3,7 @@ import { apiRequest } from "@/src/api/httpClient";
 import { storage } from "@/src/server/storage";
 import { STORAGE_BUCKETS } from "@/src/constants";
 import { getOrderById, getOrderItems } from "@/src/api/ordersApi";
-import type { UnboxingRecord } from "@/lib/types";
+import type { ShipmentCarton, ShipmentItem, UnboxingRecord } from "@/lib/types";
 import type { Database, ReservationCarton, ReservationCartonItem } from "@/src/types";
 
 type ShipmentCartonInsert = Database["public"]["Tables"]["shipment_cartons"]["Insert"];
@@ -13,11 +13,11 @@ type ReservationCartonInsert = Database["public"]["Tables"]["reservation_cartons
 type ReservationCartonItemInsert = Database["public"]["Tables"]["reservation_carton_items"]["Insert"];
 
 export async function getShipmentCartons(orderId: string) {
-  return supabase.from("shipment_cartons").select("*").eq("order_id", orderId).order("created_at", { ascending: false });
+  return apiRequest<ShipmentCarton[]>(`/api/shipment-cartons?orderId=${encodeURIComponent(orderId)}`);
 }
 
 export async function getShipmentItems(orderId: string) {
-  return supabase.from("shipment_items").select("*").eq("order_id", orderId);
+  return apiRequest<ShipmentItem[]>(`/api/shipment-items?orderId=${encodeURIComponent(orderId)}`);
 }
 
 export async function getShipmentOrderData(orderId: string) {
@@ -42,23 +42,31 @@ export async function getShipmentOrderData(orderId: string) {
 }
 
 export async function getAllShipmentCartons() {
-  return supabase.from("shipment_cartons").select("*");
+  return apiRequest<ShipmentCarton[]>("/api/shipment-cartons");
 }
 
 export async function getAllShipmentItems() {
-  return supabase.from("shipment_items").select("*");
+  return apiRequest<ShipmentItem[]>("/api/shipment-items");
 }
 
 export async function insertShipmentCarton(carton: ShipmentCartonInsert) {
-  return supabase.from("shipment_cartons").insert(carton).select("*").single();
+  return apiRequest<ShipmentCarton>("/api/shipment-cartons", {
+    method: "POST",
+    body: JSON.stringify({ carton })
+  });
 }
 
 export async function deleteShipmentCarton(cartonId: string) {
-  return supabase.from("shipment_cartons").delete().eq("id", cartonId);
+  return apiRequest<{ id: string }>(`/api/shipment-cartons?id=${encodeURIComponent(cartonId)}`, {
+    method: "DELETE"
+  });
 }
 
 export async function insertShipmentItems(items: ShipmentItemInsert[]) {
-  return supabase.from("shipment_items").insert(items);
+  return apiRequest<ShipmentItem[]>("/api/shipment-items", {
+    method: "POST",
+    body: JSON.stringify({ items })
+  });
 }
 
 export async function getUnboxingRecords(orderId?: string) {
