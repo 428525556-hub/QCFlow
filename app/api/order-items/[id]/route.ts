@@ -1,7 +1,13 @@
 import { apiSuccess } from "@/src/server/apiResponse";
 import { withApiHandler } from "@/src/server/apiHandler";
+import { getDataBackend } from "@/src/server/db/backend";
+import { TABLE_COLUMNS } from "@/src/server/db/columns";
+import { listOrderItems } from "@/src/server/db/orders";
+import { pgError } from "@/src/server/db/pgErrors";
+import { updateRowById } from "@/src/server/db/write";
 import { ApiError, databaseError } from "@/src/server/errors";
 import { createRequestSupabaseClient, requireStaffProfile } from "@/src/server/supabaseServer";
+import type { OrderItem } from "@/lib/types";
 import type { Database } from "@/src/types";
 
 type OrderItemUpdate = Database["public"]["Tables"]["order_items"]["Update"];
@@ -10,10 +16,25 @@ type Context = { params: { id: string } };
 export const PATCH = withApiHandler<Context>(async (request, { params }) => {
   await requireStaffProfile(request);
   const payload = (await request.json()) as OrderItemUpdate;
-  const supabase = createRequestSupabaseClient(request);
+  const backend = getDataBackend();
+  const supabase = backend === "supabase" ? createRequestSupabaseClient(request) : null;
 
-  const { data: existing, error: fetchError } = await supabase.from("order_items").select("*").eq("id", params.id).maybeSingle();
-  if (fetchError) throw databaseError(fetchError);
+  let existing: OrderItem | null;
+  if (backend === "pg") {
+    try {
+      [existing = null] = await listOrderItems({ itemIds: [params.id] });
+    } catch (error) {
+      throw pgError(error);
+    }
+  } else {
+    const { data, error: fetchError } = await supabase!
+      .from("order_items")
+      .select("*")
+      .eq("id", params.id)
+      .maybeSingle();
+    if (fetchError) throw databaseError(fetchError);
+    existing = data as OrderItem | null;
+  }
   if (!existing) throw new ApiError("Order item not found", 404, "NOT_FOUND");
 
   const next: OrderItemUpdate = { ...payload };
@@ -46,7 +67,23 @@ export const PATCH = withApiHandler<Context>(async (request, { params }) => {
     throw new ApiError("style_factor must be positive", 400, "VALIDATION_ERROR");
   }
 
-  const { data, error } = await supabase.from("order_items").update(next).eq("id", params.id).select("*").maybeSingle();
+  if (backend === "pg") {
+    try {
+      const data = await updateRowById<OrderItem>(
+        "order_items",
+        params.id,
+        next,
+        TABLE_COLUMNS.order_items
+      );
+      if (!data) throw new ApiError("Order item not found", 404, "NOT_FOUND");
+      return apiSuccess(data);
+    } catch (error) {
+      if (error instanceof ApiError) throw error;
+      throw pgError(error);
+    }
+  }
+
+  const { data, error } = await supabase!.from("order_items").update(next).eq("id", params.id).select("*").maybeSingle();
 
   if (error) throw databaseError(error);
   if (!data) throw new ApiError("Order item not found or no permission to update", 404, "NOT_FOUND");
