@@ -3,6 +3,7 @@ import { apiRequest } from "@/src/api/httpClient";
 import { storage } from "@/src/server/storage";
 import { STORAGE_BUCKETS } from "@/src/constants";
 import { getOrderById, getOrderItems } from "@/src/api/ordersApi";
+import type { UnboxingRecord } from "@/lib/types";
 import type { Database, ReservationCarton, ReservationCartonItem } from "@/src/types";
 
 type ShipmentCartonInsert = Database["public"]["Tables"]["shipment_cartons"]["Insert"];
@@ -61,9 +62,8 @@ export async function insertShipmentItems(items: ShipmentItemInsert[]) {
 }
 
 export async function getUnboxingRecords(orderId?: string) {
-  let query = supabase.from("unboxing_records").select("*").order("created_at", { ascending: false });
-  if (orderId) query = query.eq("order_id", orderId);
-  return query;
+  const query = orderId ? `?orderId=${encodeURIComponent(orderId)}` : "";
+  return apiRequest<UnboxingRecord[]>(`/api/unboxing${query}`);
 }
 
 export async function getReservationCartonPlan(orderId: string) {
@@ -78,15 +78,23 @@ export async function insertReservationCartonPlan(cartons: ReservationCartonInse
 }
 
 export async function getRecentUnboxingRecords(limit = 30) {
-  return supabase.from("unboxing_records").select("*").order("created_at", { ascending: false }).limit(limit);
+  return apiRequest<UnboxingRecord[]>(`/api/unboxing?limit=${encodeURIComponent(String(limit))}`);
 }
 
 export async function insertUnboxingRecord(record: UnboxingRecordInsert) {
-  return supabase.from("unboxing_records").insert(record).select("*").single();
+  const result = await apiRequest<UnboxingRecord[]>("/api/unboxing", {
+    method: "POST",
+    body: JSON.stringify({ records: [record] })
+  });
+  if (result.error) return { ...result, data: null };
+  return { ...result, data: result.data?.[0] ?? null };
 }
 
 export async function insertUnboxingRecords(records: UnboxingRecordInsert[]) {
-  return supabase.from("unboxing_records").insert(records).select("*");
+  return apiRequest<UnboxingRecord[]>("/api/unboxing", {
+    method: "POST",
+    body: JSON.stringify({ records })
+  });
 }
 
 export async function uploadUnboxingPhoto(path: string, file: File) {
