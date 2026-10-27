@@ -168,6 +168,23 @@ function rowDupKey(row: ExcelImportRow): string {
   return [row.customerName.trim(), row.poNumber.trim(), row.sku.trim(), row.quantity ?? "", row.shippingDate ?? ""].join("|");
 }
 
+export type ExistingOrderKeySource = {
+  customer_name: string;
+  po_number: string;
+  sku: string;
+  quantity: number | null;
+  shipping_date: string | null;
+};
+
+/** 把已有订单转换成去重键集合（Supabase 与国内 PG 共用） */
+export function buildDuplicateKeySet(orders: ExistingOrderKeySource[]): Set<string> {
+  const keys = new Set<string>();
+  for (const order of orders) {
+    keys.add([order.customer_name, order.po_number, order.sku, String(order.quantity ?? ""), order.shipping_date ?? ""].join("|"));
+  }
+  return keys;
+}
+
 export async function findExistingDuplicateKeys(supabase: SupabaseClient<Database>, rows: ExcelImportRow[]): Promise<Set<string>> {
   const poNumbers = Array.from(new Set(rows.map((row) => row.poNumber.trim()).filter(Boolean)));
   if (poNumbers.length === 0) return new Set();
@@ -179,11 +196,7 @@ export async function findExistingDuplicateKeys(supabase: SupabaseClient<Databas
     .is("deleted_at", null)
     .neq("status", "已完成");
 
-  const keys = new Set<string>();
-  for (const order of data ?? []) {
-    keys.add([order.customer_name, order.po_number, order.sku, String(order.quantity ?? ""), order.shipping_date ?? ""].join("|"));
-  }
-  return keys;
+  return buildDuplicateKeySet(data ?? []);
 }
 
 export type ImportRowResult = {
@@ -193,11 +206,21 @@ export type ImportRowResult = {
   orderId: string | null;
 };
 
+export type ImportGroupPayload = { order: unknown; items: unknown[] };
+export type ImportCreateOrder = (payload: ImportGroupPayload) => Promise<{
+  data: unknown;
+  error: { message: string } | null;
+}>;
+
 /**
  * 服务端导入：重新校验每一行（基于原始追溯值），只导入状态为 ok 的行；
  * 同一订单号 + 多个品番合并为一个订单（多条明细），通过现有事务函数写入。
  */
-export async function importRows(supabase: SupabaseClient<Database>, rows: ExcelImportRow[], existingKeys: Set<string>): Promise<ImportRowResult[]> {
+export async function importRows(
+  rows: ExcelImportRow[],
+  existingKeys: Set<string>,
+  createOrder: ImportCreateOrder
+): Promise<ImportRowResult[]> {
   const results: ImportRowResult[] = [];
   const importable: ExcelImportRow[] = [];
 
@@ -220,10 +243,7 @@ export async function importRows(supabase: SupabaseClient<Database>, rows: Excel
 
   const groups = groupRowsIntoOrders(importable);
   for (const group of groups) {
-    const { data, error } = await supabase.rpc("create_order_with_items", {
-      order_payload: group.order as unknown as Json,
-      item_payload: group.items as unknown as Json
-    });
+    const { data, error } = await createOrder({ order: group.order, items: group.items as unknown[] });
     const orderId = String(data ?? "");
     for (const rowNumber of group.rowNumbers) {
       const confirmedRow = importable.find((row) => row.rowNumber === rowNumber);
