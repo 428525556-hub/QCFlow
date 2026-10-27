@@ -56,3 +56,12 @@ export async function listReinspections(
     orderBy: `created_at ${filters.ascending ? "asc" : "desc"}`
   });
 }
+
+export async function getInspectionRecordById(id: string): Promise<InspectionRecord | null> {
+  const rows = await selectAll<InspectionRecord>("inspection_records", {
+    conditions: ["id = $1"],
+    values: [id],
+    limit: 1
+  });
+  return rows[0] ?? null;
+}

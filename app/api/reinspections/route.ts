@@ -1,10 +1,14 @@
 import { apiSuccess } from "@/src/server/apiResponse";
 import { withApiHandler } from "@/src/server/apiHandler";
-import { assertWriteBackendSupported, getDataBackend } from "@/src/server/db/backend";
+import { getDataBackend } from "@/src/server/db/backend";
+import { TABLE_COLUMNS } from "@/src/server/db/columns";
 import { listReinspections } from "@/src/server/db/inspections";
 import { getOrderById, listOrders } from "@/src/server/db/orders";
+import { pgError } from "@/src/server/db/pgErrors";
+import { insertRows } from "@/src/server/db/write";
 import { ApiError, databaseError } from "@/src/server/errors";
 import { createRequestSupabaseClient, requireRequestProfile, requireStaffProfile } from "@/src/server/supabaseServer";
+import type { ReinspectionRecord } from "@/lib/types";
 import type { Database } from "@/src/types";
 
 type ReinspectionInsert = Database["public"]["Tables"]["reinspection_records"]["Insert"];
@@ -59,8 +63,21 @@ export const GET = withApiHandler(async (request) => {
 
 export const POST = withApiHandler(async (request) => {
   const { user } = await requireStaffProfile(request);
-  assertWriteBackendSupported();
   const payload = (await request.json()) as ReinspectionInsert;
+
+  if (getDataBackend() === "pg") {
+    try {
+      const inserted = await insertRows<ReinspectionRecord>(
+        "reinspection_records",
+        [{ ...payload, user_id: user.id }],
+        TABLE_COLUMNS.reinspection_records
+      );
+      return apiSuccess(inserted[0], 201);
+    } catch (error) {
+      throw pgError(error);
+    }
+  }
+
   const supabase = createRequestSupabaseClient(request);
   const { data, error } = await supabase
     .from("reinspection_records")
