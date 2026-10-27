@@ -1,5 +1,8 @@
 import { apiSuccess } from "@/src/server/apiResponse";
 import { withApiHandler } from "@/src/server/apiHandler";
+import { assertWriteBackendSupported, getDataBackend } from "@/src/server/db/backend";
+import { listReinspections } from "@/src/server/db/inspections";
+import { getOrderById, listOrders } from "@/src/server/db/orders";
 import { ApiError, databaseError } from "@/src/server/errors";
 import { createRequestSupabaseClient, requireRequestProfile, requireStaffProfile } from "@/src/server/supabaseServer";
 import type { Database } from "@/src/types";
@@ -11,6 +14,26 @@ export const GET = withApiHandler(async (request) => {
   const params = request.nextUrl.searchParams;
   const orderId = params.get("orderId");
   const ascending = params.get("ascending") === "true";
+
+  if (getDataBackend() === "pg") {
+    let orderIds: string[] | undefined;
+
+    if (profile.role === "field_inspector") {
+      if (orderId) {
+        const order = await getOrderById(orderId);
+        if (!order) throw new ApiError("Order not found", 404, "NOT_FOUND");
+        if (order.customer_name !== profile.customer_name) throw new ApiError("Forbidden", 403, "FORBIDDEN");
+      } else {
+        const allowedOrders = await listOrders({ customerName: profile.customer_name ?? "" });
+        if (allowedOrders.length === 0) return apiSuccess([]);
+        orderIds = allowedOrders.map((order) => order.id);
+      }
+    }
+
+    const records = await listReinspections({ orderId, orderIds, ascending });
+    return apiSuccess(records);
+  }
+
   const supabase = createRequestSupabaseClient(request);
   let query = supabase.from("reinspection_records").select("*");
   if (orderId) query = query.eq("order_id", orderId);
@@ -36,6 +59,7 @@ export const GET = withApiHandler(async (request) => {
 
 export const POST = withApiHandler(async (request) => {
   const { user } = await requireStaffProfile(request);
+  assertWriteBackendSupported();
   const payload = (await request.json()) as ReinspectionInsert;
   const supabase = createRequestSupabaseClient(request);
   const { data, error } = await supabase

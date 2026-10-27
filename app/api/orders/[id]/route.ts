@@ -1,5 +1,7 @@
 import { apiSuccess } from "@/src/server/apiResponse";
 import { withApiHandler } from "@/src/server/apiHandler";
+import { assertWriteBackendSupported, getDataBackend } from "@/src/server/db/backend";
+import { getOrderById } from "@/src/server/db/orders";
 import { ApiError, databaseError } from "@/src/server/errors";
 import { createRequestSupabaseClient, requireRequestProfile, requireStaffProfile } from "@/src/server/supabaseServer";
 import type { Database } from "@/src/types";
@@ -9,6 +11,22 @@ type Context = { params: { id: string } };
 
 export const GET = withApiHandler<Context>(async (request, { params }) => {
   const { profile } = await requireRequestProfile(request);
+
+  if (getDataBackend() === "pg") {
+    const includeDeleted = request.nextUrl.searchParams.get("includeDeleted") === "true";
+    const order = await getOrderById(params.id);
+    if (!order || (!includeDeleted && order.deleted_at !== null)) {
+      throw new ApiError("Order not found", 404, "NOT_FOUND");
+    }
+    if (
+      profile.role === "field_inspector" &&
+      (order.customer_name !== profile.customer_name || order.inspection_plan !== "field")
+    ) {
+      throw new ApiError("Forbidden", 403, "FORBIDDEN");
+    }
+    return apiSuccess(order);
+  }
+
   const supabase = createRequestSupabaseClient(request);
   let query = supabase.from("orders").select("*").eq("id", params.id);
   if (request.nextUrl.searchParams.get("includeDeleted") !== "true") query = query.is("deleted_at", null);
@@ -21,6 +39,7 @@ export const GET = withApiHandler<Context>(async (request, { params }) => {
 
 export const PATCH = withApiHandler<Context>(async (request, { params }) => {
   await requireStaffProfile(request);
+  assertWriteBackendSupported();
   const payload = (await request.json()) as OrderUpdate;
   const supabase = createRequestSupabaseClient(request);
   const { data, error } = await supabase.from("orders").update(payload).eq("id", params.id).select("*").maybeSingle();
@@ -32,6 +51,7 @@ export const PATCH = withApiHandler<Context>(async (request, { params }) => {
 
 export const DELETE = withApiHandler<Context>(async (request, { params }) => {
   await requireStaffProfile(request);
+  assertWriteBackendSupported();
   const supabase = createRequestSupabaseClient(request);
   const { data, error } = await supabase.from("orders").delete().eq("id", params.id).select("id").maybeSingle();
 

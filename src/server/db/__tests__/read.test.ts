@@ -41,6 +41,11 @@ describe("read.normalizeRow", () => {
       nested: { enabled: true }
     });
   });
+
+  test("orderIds 为空数组时直接返回空，不访问数据库", async () => {
+    assert.deepEqual(await listInspectionRecords({ orderIds: [] }), []);
+    assert.deepEqual(await listReinspections({ orderIds: [] }), []);
+  });
 });
 
 const hasDatabase = Boolean(process.env.DATABASE_URL);
@@ -54,7 +59,9 @@ describe("只读仓储（集成，需 DATABASE_URL）", () => {
   test("全部只读查询都能在当前库上执行", { skip: !hasDatabase }, async () => {
     const lists = {
       inspections: await listInspectionRecords({ orderId: unknownId }),
+      inspectionsByOrderIds: await listInspectionRecords({ orderIds: [unknownId] }),
       reinspections: await listReinspections({ orderId: unknownId }),
+      reinspectionsByOrderIds: await listReinspections({ orderIds: [unknownId] }),
       unboxing: await listUnboxingRecords({ orderId: unknownId }),
       shipmentCartons: await listShipmentCartons(unknownId),
       shipmentItems: await listShipmentItems(unknownId),

@@ -1,5 +1,7 @@
 import { apiSuccess } from "@/src/server/apiResponse";
 import { withApiHandler } from "@/src/server/apiHandler";
+import { assertWriteBackendSupported, getDataBackend } from "@/src/server/db/backend";
+import { listReservationCartonItems, listReservationCartons } from "@/src/server/db/reservations";
 import { ApiError, databaseError } from "@/src/server/errors";
 import { createRequestSupabaseClient, requireStaffProfile } from "@/src/server/supabaseServer";
 import type { Database } from "@/src/types";
@@ -11,6 +13,14 @@ export const GET = withApiHandler(async (request) => {
   await requireStaffProfile(request);
   const orderId = request.nextUrl.searchParams.get("orderId");
   if (!orderId) throw new ApiError("orderId is required", 400, "VALIDATION_ERROR");
+
+  if (getDataBackend() === "pg") {
+    const [cartons, items] = await Promise.all([
+      listReservationCartons(orderId),
+      listReservationCartonItems(orderId)
+    ]);
+    return apiSuccess({ cartons, items });
+  }
 
   const supabase = createRequestSupabaseClient(request);
   const [{ data: cartons, error: cartonsError }, { data: items, error: itemsError }] = await Promise.all([
@@ -25,6 +35,7 @@ export const GET = withApiHandler(async (request) => {
 
 export const POST = withApiHandler(async (request) => {
   const { user } = await requireStaffProfile(request);
+  assertWriteBackendSupported();
   const payload = (await request.json()) as {
     cartons: ReservationCartonInsert[];
     items: ReservationCartonItemInsert[];

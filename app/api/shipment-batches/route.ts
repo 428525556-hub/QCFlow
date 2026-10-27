@@ -1,5 +1,7 @@
 import { apiSuccess } from "@/src/server/apiResponse";
 import { withApiHandler } from "@/src/server/apiHandler";
+import { assertWriteBackendSupported, getDataBackend } from "@/src/server/db/backend";
+import { listShipmentBatches } from "@/src/server/db/shipments";
 import { ApiError, databaseError } from "@/src/server/errors";
 import { createRequestSupabaseClient, requireStaffProfile } from "@/src/server/supabaseServer";
 
@@ -7,6 +9,9 @@ const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 export const GET = withApiHandler(async (request) => {
   await requireStaffProfile(request);
+  if (getDataBackend() === "pg") {
+    return apiSuccess(await listShipmentBatches());
+  }
   const supabase = createRequestSupabaseClient(request);
   const { data, error } = await supabase.from("shipment_batches").select("*").order("shipping_date", { ascending: true });
   if (error) throw databaseError(error);
@@ -15,6 +20,7 @@ export const GET = withApiHandler(async (request) => {
 
 export const POST = withApiHandler(async (request) => {
   await requireStaffProfile(request);
+  assertWriteBackendSupported();
   const body = (await request.json()) as { customer_name?: string; shipping_date?: string; batch_no?: string | null; remark?: string | null };
 
   const customerName = body.customer_name?.trim();

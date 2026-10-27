@@ -1,3 +1,5 @@
+import { ApiError } from "@/src/server/errors";
+
 export type DataBackend = "supabase" | "pg";
 
 /**
@@ -10,4 +12,14 @@ export type DataBackend = "supabase" | "pg";
  */
 export function getDataBackend(): DataBackend {
   return process.env.DATA_BACKEND === "pg" ? "pg" : "supabase";
+}
+
+/**
+ * 写接口迁移前的统一保护：
+ * pg 模式下直接 501，避免"读国内库、写 Supabase"造成数据割裂。
+ */
+export function assertWriteBackendSupported(): void {
+  if (getDataBackend() === "pg") {
+    throw new ApiError("写接口尚未迁移到国内数据库", 501, "NOT_IMPLEMENTED");
+  }
 }

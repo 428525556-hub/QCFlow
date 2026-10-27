@@ -1,6 +1,6 @@
 import { apiSuccess } from "@/src/server/apiResponse";
 import { withApiHandler } from "@/src/server/apiHandler";
-import { getDataBackend } from "@/src/server/db/backend";
+import { assertWriteBackendSupported, getDataBackend } from "@/src/server/db/backend";
 import { listOrders } from "@/src/server/db/orders";
 import { ApiError, databaseError } from "@/src/server/errors";
 import { createRequestSupabaseClient, requireRequestProfile, requireStaffProfile } from "@/src/server/supabaseServer";
@@ -53,9 +53,7 @@ export const GET = withApiHandler(async (request) => {
 export const POST = withApiHandler(async (request) => {
   const { user } = await requireStaffProfile(request);
   if (!user) throw new ApiError("Unauthorized", 401, "UNAUTHORIZED");
-  if (getDataBackend() === "pg") {
-    throw new ApiError("写接口尚未迁移到国内数据库", 501, "NOT_IMPLEMENTED");
-  }
+  assertWriteBackendSupported();
   const payload = (await request.json()) as OrderInsert;
   const supabase = createRequestSupabaseClient(request);
   const { data, error } = await supabase

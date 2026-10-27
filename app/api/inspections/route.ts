@@ -1,5 +1,8 @@
 import { apiSuccess } from "@/src/server/apiResponse";
 import { withApiHandler } from "@/src/server/apiHandler";
+import { assertWriteBackendSupported, getDataBackend } from "@/src/server/db/backend";
+import { listInspectionRecords } from "@/src/server/db/inspections";
+import { getOrderById, listOrders } from "@/src/server/db/orders";
 import { ApiError, databaseError } from "@/src/server/errors";
 import { createRequestSupabaseClient, requireRequestProfile } from "@/src/server/supabaseServer";
 import { ADMIN_EMAIL } from "@/lib/security";
@@ -13,6 +16,31 @@ export const GET = withApiHandler(async (request) => {
   const orderId = params.get("orderId");
   const stage = params.get("stage") as InspectionStage | null;
   const ascending = params.get("ascending") === "true";
+
+  if (getDataBackend() === "pg") {
+    let orderIds: string[] | undefined;
+
+    if (profile.role === "field_inspector") {
+      if (orderId) {
+        const order = await getOrderById(orderId);
+        if (!order) throw new ApiError("Order not found", 404, "NOT_FOUND");
+        if (order.customer_name !== profile.customer_name) throw new ApiError("Forbidden", 403, "FORBIDDEN");
+      } else {
+        const allowedOrders = await listOrders({ customerName: profile.customer_name ?? "" });
+        if (allowedOrders.length === 0) return apiSuccess([]);
+        orderIds = allowedOrders.map((order) => order.id);
+      }
+    }
+
+    const records = await listInspectionRecords({
+      orderId,
+      orderIds,
+      stage: profile.role === "field_inspector" ? "field" : stage,
+      ascending
+    });
+    return apiSuccess(records);
+  }
+
   const supabase = createRequestSupabaseClient(request);
   let query = supabase.from("inspection_records").select("*");
 
@@ -41,6 +69,7 @@ export const GET = withApiHandler(async (request) => {
 
 export const POST = withApiHandler(async (request) => {
   const { user, profile } = await requireRequestProfile(request);
+  assertWriteBackendSupported();
   const payload = (await request.json()) as InspectionInsert;
   const supabase = createRequestSupabaseClient(request);
 
@@ -65,6 +94,7 @@ export const POST = withApiHandler(async (request) => {
 
 export const DELETE = withApiHandler(async (request) => {
   const { user, profile } = await requireRequestProfile(request);
+  assertWriteBackendSupported();
   const id = request.nextUrl.searchParams.get("id");
   if (!id) throw new ApiError("id is required", 400, "VALIDATION_ERROR");
 
