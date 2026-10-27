@@ -1,18 +1,18 @@
-import { supabase } from "@/src/api/client";
+import { apiRequest } from "@/src/api/httpClient";
 import { getOrderById, getOrderItems } from "@/src/api/ordersApi";
 import { getShipmentCartons, getShipmentItems } from "@/src/api/shipmentApi";
+import type { DispatchRecord } from "@/lib/types";
 import type { Database } from "@/src/types";
 
 type DispatchRecordInsert = Database["public"]["Tables"]["dispatch_records"]["Insert"];
 
 export async function getDispatchRecords(orderId?: string) {
-  let query = supabase.from("dispatch_records").select("*").order("created_at", { ascending: false });
-  if (orderId) query = query.eq("order_id", orderId);
-  return query;
+  const query = orderId ? `?orderId=${encodeURIComponent(orderId)}` : "";
+  return apiRequest<DispatchRecord[]>(`/api/dispatch-records${query}`);
 }
 
 export async function getAllDispatchRecords() {
-  return supabase.from("dispatch_records").select("*");
+  return apiRequest<DispatchRecord[]>("/api/dispatch-records");
 }
 
 export async function getDispatchOrderData(orderId: string) {
@@ -37,5 +37,8 @@ export async function getDispatchOrderData(orderId: string) {
 }
 
 export async function insertDispatchRecord(record: DispatchRecordInsert) {
-  return supabase.from("dispatch_records").insert(record).select("*").single();
+  return apiRequest<DispatchRecord>("/api/dispatch-records", {
+    method: "POST",
+    body: JSON.stringify({ record })
+  });
 }

@@ -507,4 +507,71 @@ describe("订单事务（集成，需 DATABASE_URL）", () => {
       if (!(error instanceof RollbackSignal)) throw error;
     }
   });
+
+  test("出货记录写入（事务内，回滚）", { skip: !hasDatabase }, async () => {
+    try {
+      await withTransaction(async (client) => {
+        await client.query(
+          "select set_config('app.user_id', $1, true), set_config('app.user_email', $2, true)",
+          [userId, "parity-test@example.com"]
+        );
+        await client.query(
+          "insert into public.users (id, email) values ($1, $2) on conflict (id) do nothing",
+          [userId, "parity-test@example.com"]
+        );
+
+        const orderId = await insertOrderWithItems(client, {
+          order: {
+            order_type: "reservation",
+            customer_name: "出货测试客户",
+            factory_name: "出货测试工厂",
+            po_number: "PO-DISP-0001",
+            sku: "SKU-DISP-0001",
+            inbound_date: "2026-10-20",
+            shipping_date: "2026-11-01",
+            inspection_plan: "both",
+            reservation_remark: null,
+            color: "黑",
+            size: "42",
+            quantity: 10,
+            inbound_quantity: 0,
+            status: "未开始"
+          },
+          items: [
+            {
+              po_number: "PO-DISP-0001",
+              sku: "SKU-DISP-0001",
+              color: "黑",
+              size: "42",
+              carton_count: 1,
+              quantity_per_carton: 10,
+              quantity: 10,
+              inbound_quantity: 0
+            }
+          ]
+        });
+
+        const [record] = await insertRows<{ id: string }>(
+          "dispatch_records",
+          [
+            {
+              order_id: orderId,
+              user_id: userId,
+              total_cartons: 1,
+              total_quantity: 10,
+              expected_quantity: 10,
+              is_full_dispatch: true
+            }
+          ],
+          TABLE_COLUMNS.dispatch_records,
+          client
+        );
+        assert.ok(record.id);
+
+        throw new RollbackSignal();
+      });
+    } catch (error) {
+      if (!(error instanceof RollbackSignal)) throw error;
+    }
+  });
 });
