@@ -1,5 +1,7 @@
 import { apiSuccess } from "@/src/server/apiResponse";
 import { withApiHandler } from "@/src/server/apiHandler";
+import { assertWriteBackendSupported, getDataBackend } from "@/src/server/db/backend";
+import { listTeamWorkExceptions } from "@/src/server/db/schedule";
 import { ApiError, databaseError } from "@/src/server/errors";
 import { createRequestSupabaseClient, requireAdminProfile, requireStaffProfile } from "@/src/server/supabaseServer";
 import type { Database } from "@/src/types";
@@ -12,6 +14,11 @@ export const GET = withApiHandler(async (request) => {
   const teamId = params.get("teamId");
   const from = params.get("from");
   const to = params.get("to");
+
+  if (getDataBackend() === "pg") {
+    return apiSuccess(await listTeamWorkExceptions({ teamId, from, to }));
+  }
+
   const supabase = createRequestSupabaseClient(request);
   let query = supabase.from("team_work_exceptions").select("*").order("date", { ascending: true });
   if (teamId) query = query.eq("team_id", teamId);
@@ -24,6 +31,7 @@ export const GET = withApiHandler(async (request) => {
 
 export const POST = withApiHandler(async (request) => {
   await requireAdminProfile(request);
+  assertWriteBackendSupported();
   const payload = (await request.json()) as ExceptionInsert;
   const supabase = createRequestSupabaseClient(request);
   const { data, error } = await supabase
@@ -37,6 +45,7 @@ export const POST = withApiHandler(async (request) => {
 
 export const DELETE = withApiHandler(async (request) => {
   await requireAdminProfile(request);
+  assertWriteBackendSupported();
   const id = request.nextUrl.searchParams.get("id");
   if (!id) throw new ApiError("id is required", 400, "VALIDATION_ERROR");
   const supabase = createRequestSupabaseClient(request);

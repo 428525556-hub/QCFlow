@@ -1,5 +1,7 @@
 import { apiSuccess } from "@/src/server/apiResponse";
 import { withApiHandler } from "@/src/server/apiHandler";
+import { assertWriteBackendSupported, getDataBackend } from "@/src/server/db/backend";
+import { listProductionCalendar } from "@/src/server/db/schedule";
 import { ApiError, databaseError } from "@/src/server/errors";
 import { createRequestSupabaseClient, requireAdminProfile, requireStaffProfile } from "@/src/server/supabaseServer";
 import type { Database } from "@/src/types";
@@ -11,6 +13,11 @@ export const GET = withApiHandler(async (request) => {
   const params = request.nextUrl.searchParams;
   const from = params.get("from");
   const to = params.get("to");
+
+  if (getDataBackend() === "pg") {
+    return apiSuccess(await listProductionCalendar({ from, to }));
+  }
+
   const supabase = createRequestSupabaseClient(request);
   let query = supabase.from("production_calendar").select("*").order("date", { ascending: true });
   if (from) query = query.gte("date", from);
@@ -22,6 +29,7 @@ export const GET = withApiHandler(async (request) => {
 
 export const POST = withApiHandler(async (request) => {
   await requireAdminProfile(request);
+  assertWriteBackendSupported();
   const payload = (await request.json()) as CalendarInsert;
   const supabase = createRequestSupabaseClient(request);
   const { data, error } = await supabase
@@ -35,6 +43,7 @@ export const POST = withApiHandler(async (request) => {
 
 export const DELETE = withApiHandler(async (request) => {
   await requireAdminProfile(request);
+  assertWriteBackendSupported();
   const id = request.nextUrl.searchParams.get("id");
   if (!id) throw new ApiError("id is required", 400, "VALIDATION_ERROR");
   const supabase = createRequestSupabaseClient(request);

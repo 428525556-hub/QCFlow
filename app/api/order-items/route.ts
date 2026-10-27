@@ -1,5 +1,7 @@
 import { apiSuccess } from "@/src/server/apiResponse";
 import { withApiHandler } from "@/src/server/apiHandler";
+import { assertWriteBackendSupported, getDataBackend } from "@/src/server/db/backend";
+import { getOrderById, listOrderItems } from "@/src/server/db/orders";
 import { ApiError, databaseError } from "@/src/server/errors";
 import { createRequestSupabaseClient, requireRequestProfile, requireStaffProfile } from "@/src/server/supabaseServer";
 import type { Database } from "@/src/types";
@@ -10,6 +12,25 @@ export const GET = withApiHandler(async (request) => {
   const { profile } = await requireRequestProfile(request);
   const supabase = createRequestSupabaseClient(request);
   const orderId = request.nextUrl.searchParams.get("orderId");
+
+  if (getDataBackend() === "pg") {
+    if (profile.role === "client" || profile.role === "field_inspector") {
+      if (!orderId) return apiSuccess([]);
+      const order = await getOrderById(orderId);
+      if (!order) throw new ApiError("Order not found", 404, "NOT_FOUND");
+      if (profile.role === "client" && order.customer_name !== profile.customer_name) {
+        throw new ApiError("Forbidden", 403, "FORBIDDEN");
+      }
+      if (
+        profile.role === "field_inspector" &&
+        (order.customer_name !== profile.customer_name || order.inspection_plan !== "field")
+      ) {
+        throw new ApiError("Forbidden", 403, "FORBIDDEN");
+      }
+    }
+    return apiSuccess(await listOrderItems({ orderId }));
+  }
+
   let query = supabase.from("order_items").select("*");
 
   if (profile.role === "client") {
@@ -33,6 +54,7 @@ export const GET = withApiHandler(async (request) => {
 
 export const POST = withApiHandler(async (request) => {
   const { user } = await requireStaffProfile(request);
+  assertWriteBackendSupported();
   if (!user) throw new ApiError("Unauthorized", 401, "UNAUTHORIZED");
   const payload = (await request.json()) as OrderItemInsert[];
   const rows = payload.map((item) => ({ ...item, user_id: user.id }));
@@ -44,6 +66,7 @@ export const POST = withApiHandler(async (request) => {
 
 export const DELETE = withApiHandler(async (request) => {
   await requireStaffProfile(request);
+  assertWriteBackendSupported();
   const { ids } = (await request.json()) as { ids: string[] };
   if (!Array.isArray(ids) || ids.length === 0) throw new ApiError("ids is required", 400, "VALIDATION_ERROR");
 

@@ -143,10 +143,26 @@ export async function getOrderById(id: string): Promise<Order | null> {
   return rows.length > 0 ? mapOrderRow(rows[0]) : null;
 }
 
-export async function listOrderItems(orderId: string): Promise<OrderItem[]> {
+export async function listOrderItems(
+  filters: { orderId?: string | null; orderIds?: string[] | null } = {}
+): Promise<OrderItem[]> {
+  const conditions: string[] = [];
+  const values: unknown[] = [];
+
+  if (filters.orderIds && filters.orderIds.length === 0) return [];
+  if (filters.orderId) {
+    values.push(filters.orderId);
+    conditions.push(`order_id = $${values.length}`);
+  }
+  if (filters.orderIds && filters.orderIds.length > 0) {
+    values.push(filters.orderIds);
+    conditions.push(`order_id = any($${values.length}::uuid[])`);
+  }
+
+  const where = conditions.length > 0 ? ` where ${conditions.join(" and ")}` : "";
   const rows = await queryRows<OrderItemRow>(
-    `select ${TABLE_COLUMNS.order_items} from public.order_items where order_id = $1 order by created_at asc`,
-    [orderId]
+    `select ${TABLE_COLUMNS.order_items} from public.order_items${where} order by color asc, size asc`,
+    values
   );
   return rows.map(mapOrderItemRow);
 }

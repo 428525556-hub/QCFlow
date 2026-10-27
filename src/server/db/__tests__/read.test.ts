@@ -74,11 +74,11 @@ describe("只读仓储（集成，需 DATABASE_URL）", () => {
       invites: await listRegistrationInvites(),
       teams: await listInspectionTeams(),
       styles: await listStyleCategories(),
-      calendar: await listProductionCalendar("2026-01-01", "2026-12-31"),
-      exceptions: await listTeamWorkExceptions("2026-01-01", "2026-12-31"),
+      calendar: await listProductionCalendar({ from: "2026-01-01", to: "2026-12-31" }),
+      exceptions: await listTeamWorkExceptions({ from: "2026-01-01", to: "2026-12-31" }),
       tasks: await listScheduleTasks({ excludeCancelled: true }),
       progress: await listScheduleProgress(unknownId),
-      changeLogs: await listScheduleChangeLogs(unknownId)
+      changeLogs: await listScheduleChangeLogs({ orderId: unknownId, limit: 300 })
     };
 
     for (const [name, rows] of Object.entries(lists)) {

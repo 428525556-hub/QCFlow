@@ -98,7 +98,7 @@ describe("orders 仓储（集成，需 DATABASE_URL）", () => {
   });
 
   test("不存在的订单明细返回空数组", { skip: !hasDatabase }, async () => {
-    const items = await listOrderItems("00000000-0000-4000-8000-000000000000");
+    const items = await listOrderItems({ orderId: "00000000-0000-4000-8000-000000000000" });
     assert.deepEqual(items, []);
   });
 });

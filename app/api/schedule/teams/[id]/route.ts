@@ -1,5 +1,6 @@
 import { apiSuccess } from "@/src/server/apiResponse";
 import { withApiHandler } from "@/src/server/apiHandler";
+import { assertWriteBackendSupported } from "@/src/server/db/backend";
 import { ApiError, databaseError } from "@/src/server/errors";
 import { createRequestSupabaseClient, requireAdminProfile } from "@/src/server/supabaseServer";
 import type { Database } from "@/src/types";
@@ -9,6 +10,7 @@ type Context = { params: { id: string } };
 
 export const PATCH = withApiHandler<Context>(async (request, { params }) => {
   await requireAdminProfile(request);
+  assertWriteBackendSupported();
   const payload = (await request.json()) as TeamUpdate;
   const supabase = createRequestSupabaseClient(request);
   const { data, error } = await supabase
@@ -24,6 +26,7 @@ export const PATCH = withApiHandler<Context>(async (request, { params }) => {
 
 export const DELETE = withApiHandler<Context>(async (request, { params }) => {
   await requireAdminProfile(request);
+  assertWriteBackendSupported();
   const supabase = createRequestSupabaseClient(request);
   const { data, error } = await supabase.from("inspection_teams").delete().eq("id", params.id).select("id").maybeSingle();
   if (error) throw databaseError(error);
