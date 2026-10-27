@@ -1,4 +1,4 @@
-import { ApiError } from "@/src/server/errors";
+import { ApiError } from "../errors.ts";
 
 export type DataBackend = "supabase" | "pg";
 

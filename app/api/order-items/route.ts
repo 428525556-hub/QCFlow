@@ -1,9 +1,13 @@
 import { apiSuccess } from "@/src/server/apiResponse";
 import { withApiHandler } from "@/src/server/apiHandler";
-import { assertWriteBackendSupported, getDataBackend } from "@/src/server/db/backend";
+import { getDataBackend } from "@/src/server/db/backend";
+import { TABLE_COLUMNS } from "@/src/server/db/columns";
 import { getOrderById, listOrderItems } from "@/src/server/db/orders";
+import { pgError } from "@/src/server/db/pgErrors";
+import { deleteRowsByIds, insertRows } from "@/src/server/db/write";
 import { ApiError, databaseError } from "@/src/server/errors";
 import { createRequestSupabaseClient, requireRequestProfile, requireStaffProfile } from "@/src/server/supabaseServer";
+import type { OrderItem } from "@/lib/types";
 import type { Database } from "@/src/types";
 
 type OrderItemInsert = Database["public"]["Tables"]["order_items"]["Insert"];
@@ -54,10 +58,19 @@ export const GET = withApiHandler(async (request) => {
 
 export const POST = withApiHandler(async (request) => {
   const { user } = await requireStaffProfile(request);
-  assertWriteBackendSupported();
   if (!user) throw new ApiError("Unauthorized", 401, "UNAUTHORIZED");
   const payload = (await request.json()) as OrderItemInsert[];
   const rows = payload.map((item) => ({ ...item, user_id: user.id }));
+
+  if (getDataBackend() === "pg") {
+    try {
+      const inserted = await insertRows<OrderItem>("order_items", rows, TABLE_COLUMNS.order_items);
+      return apiSuccess(inserted, 201);
+    } catch (error) {
+      throw pgError(error);
+    }
+  }
+
   const supabase = createRequestSupabaseClient(request);
   const { data, error } = await supabase.from("order_items").insert(rows).select("*");
   if (error) throw databaseError(error);
@@ -66,9 +79,17 @@ export const POST = withApiHandler(async (request) => {
 
 export const DELETE = withApiHandler(async (request) => {
   await requireStaffProfile(request);
-  assertWriteBackendSupported();
   const { ids } = (await request.json()) as { ids: string[] };
   if (!Array.isArray(ids) || ids.length === 0) throw new ApiError("ids is required", 400, "VALIDATION_ERROR");
+
+  if (getDataBackend() === "pg") {
+    try {
+      await deleteRowsByIds("order_items", ids);
+      return apiSuccess({ ids });
+    } catch (error) {
+      throw pgError(error);
+    }
+  }
 
   const supabase = createRequestSupabaseClient(request);
   const { error } = await supabase.from("order_items").delete().in("id", ids);

@@ -1,5 +1,8 @@
 import { apiSuccess } from "@/src/server/apiResponse";
 import { withApiHandler } from "@/src/server/apiHandler";
+import { getDataBackend } from "@/src/server/db/backend";
+import { createOrderWithItems } from "@/src/server/db/orders";
+import { pgError } from "@/src/server/db/pgErrors";
 import { ApiError, databaseError } from "@/src/server/errors";
 import { createRequestSupabaseClient, requireStaffProfile } from "@/src/server/supabaseServer";
 import type { Database, Json } from "@/src/types";
@@ -8,10 +11,24 @@ type OrderInsert = Database["public"]["Tables"]["orders"]["Insert"];
 type OrderItemInsert = Omit<Database["public"]["Tables"]["order_items"]["Insert"], "order_id">;
 
 export const POST = withApiHandler(async (request) => {
-  await requireStaffProfile(request);
+  const { user } = await requireStaffProfile(request);
   const payload = (await request.json()) as { order: OrderInsert; items: OrderItemInsert[] };
   if (!payload.order || !Array.isArray(payload.items) || payload.items.length === 0) {
     throw new ApiError("order and at least one item are required", 400, "VALIDATION_ERROR");
+  }
+
+  if (getDataBackend() === "pg") {
+    try {
+      const id = await createOrderWithItems({
+        userId: user.id,
+        email: user.email ?? "",
+        order: payload.order as unknown as Record<string, unknown>,
+        items: payload.items as unknown as Record<string, unknown>[]
+      });
+      return apiSuccess({ id }, 201);
+    } catch (error) {
+      throw pgError(error);
+    }
   }
 
   const supabase = createRequestSupabaseClient(request);

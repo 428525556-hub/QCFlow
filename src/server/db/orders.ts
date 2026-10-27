@@ -1,8 +1,9 @@
 import type { InspectionPlan, Order, OrderItem, OrderStatus, SchedulePriority, SubmitStatus } from "@/lib/types";
-import type { QueryResultRow } from "pg";
+import type { PoolClient, QueryResultRow } from "pg";
 
 import { TABLE_COLUMNS } from "./columns.ts";
 import { queryRows } from "./query.ts";
+import { withUserContext } from "./userContext.ts";
 
 type OrderRow = QueryResultRow & {
   id: string;
@@ -165,4 +166,31 @@ export async function listOrderItems(
     values
   );
   return rows.map(mapOrderItemRow);
+}
+
+export type CreateOrderInput = {
+  userId: string;
+  email: string;
+  order: Record<string, unknown>;
+  items: Record<string, unknown>[];
+};
+
+/** 在已注入用户上下文的事务连接上调用数据库函数（测试可复用并回滚） */
+export async function insertOrderWithItems(
+  client: PoolClient,
+  input: { order: Record<string, unknown>; items: Record<string, unknown>[] }
+): Promise<string> {
+  const result = await client.query<QueryResultRow>(
+    "select public.create_order_with_items($1::jsonb, $2::jsonb) as id",
+    [JSON.stringify(input.order), JSON.stringify(input.items)]
+  );
+  const id = result.rows[0]?.id;
+  if (!id) throw new Error("create_order_with_items 未返回 id");
+  return String(id);
+}
+
+export async function createOrderWithItems(input: CreateOrderInput): Promise<string> {
+  return withUserContext(input.userId, input.email, (client) =>
+    insertOrderWithItems(client, { order: input.order, items: input.items })
+  );
 }
