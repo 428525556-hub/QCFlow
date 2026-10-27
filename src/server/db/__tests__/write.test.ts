@@ -6,7 +6,7 @@ import { insertOrderWithItems } from "../orders.ts";
 import { closePool, getPool } from "../pool.ts";
 import { withTransaction } from "../query.ts";
 import { upsertShipmentBatch } from "../shipments.ts";
-import { deleteRowsByIds, insertRows, updateRowById } from "../write.ts";
+import { deleteRowsByIds, insertRows, updateRowById, updateRowsWhere } from "../write.ts";
 
 describe("write.insertRows", () => {
   test("拒绝白名单外的字段（不访问数据库）", async () => {
@@ -567,6 +567,96 @@ describe("订单事务（集成，需 DATABASE_URL）", () => {
           client
         );
         assert.ok(record.id);
+
+        throw new RollbackSignal();
+      });
+    } catch (error) {
+      if (!(error instanceof RollbackSignal)) throw error;
+    }
+  });
+
+  test("明细身份同步更新（事务内，回滚）", { skip: !hasDatabase }, async () => {
+    try {
+      await withTransaction(async (client) => {
+        await client.query(
+          "select set_config('app.user_id', $1, true), set_config('app.user_email', $2, true)",
+          [userId, "parity-test@example.com"]
+        );
+        await client.query(
+          "insert into public.users (id, email) values ($1, $2) on conflict (id) do nothing",
+          [userId, "parity-test@example.com"]
+        );
+
+        const orderId = await insertOrderWithItems(client, {
+          order: {
+            order_type: "reservation",
+            customer_name: "身份同步测试客户",
+            factory_name: "身份同步测试工厂",
+            po_number: "PO-SYNC-0001",
+            sku: "SKU-SYNC-0001",
+            inbound_date: "2026-10-20",
+            shipping_date: "2026-11-01",
+            inspection_plan: "both",
+            reservation_remark: null,
+            color: "黑",
+            size: "42",
+            quantity: 10,
+            inbound_quantity: 0,
+            status: "未开始"
+          },
+          items: [
+            {
+              po_number: "PO-SYNC-0001",
+              sku: "SKU-SYNC-0001",
+              color: "黑",
+              size: "42",
+              carton_count: 1,
+              quantity_per_carton: 10,
+              quantity: 10,
+              inbound_quantity: 0
+            }
+          ]
+        });
+
+        await insertRows(
+          "unboxing_records",
+          [
+            {
+              order_id: orderId,
+              user_id: userId,
+              carton_no: "NO.001",
+              po_number: "PO-SYNC-0001",
+              sku: "SKU-SYNC-0001",
+              color: "黑",
+              size: "42",
+              quantity: 10,
+              shortage_quantity: 0
+            }
+          ],
+          TABLE_COLUMNS.unboxing_records,
+          client
+        );
+
+        const updated = await updateRowsWhere(
+          "unboxing_records",
+          { color: "白", size: "43" },
+          {
+            order_id: orderId,
+            po_number: "PO-SYNC-0001",
+            sku: "SKU-SYNC-0001",
+            color: "黑",
+            size: "42"
+          },
+          client
+        );
+        assert.equal(updated, 1);
+
+        const check = await client.query(
+          "select color, size from public.unboxing_records where order_id = $1",
+          [orderId]
+        );
+        assert.equal(check.rows[0].color, "白");
+        assert.equal(check.rows[0].size, "43");
 
         throw new RollbackSignal();
       });

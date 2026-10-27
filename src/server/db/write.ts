@@ -2,6 +2,7 @@ import type { PoolClient, QueryResultRow } from "pg";
 
 import { ApiError } from "../errors.ts";
 import { TABLE_COLUMNS, type TableName } from "./columns.ts";
+import { getPool } from "./pool.ts";
 import { queryRows } from "./query.ts";
 import { normalizeRow } from "./read.ts";
 
@@ -88,4 +89,36 @@ export async function updateRowById<T>(
     ? (await client.query<QueryResultRow>(sql, values)).rows
     : await queryRows<QueryResultRow>(sql, values);
   return rows.length > 0 ? normalizeRow<T>(rows[0]) : null;
+}
+
+/** 按等值条件批量更新，返回受影响行数（match 不能为空，避免全表更新） */
+export async function updateRowsWhere(
+  table: TableName,
+  patch: Record<string, unknown>,
+  match: Record<string, unknown>,
+  client?: PoolClient
+): Promise<number> {
+  const patchColumns = Object.keys(patch).filter((column) => patch[column] !== undefined);
+  const matchColumns = Object.keys(match).filter((column) => match[column] !== undefined);
+  if (patchColumns.length === 0) throw new ApiError("没有可更新的字段", 400, "VALIDATION_ERROR");
+  if (matchColumns.length === 0) throw new ApiError("更新条件不能为空", 400, "VALIDATION_ERROR");
+  assertAllowedColumns(table, [...patchColumns, ...matchColumns]);
+
+  for (const forbidden of ["id", "created_at"]) {
+    if (patchColumns.includes(forbidden)) throw new ApiError(`字段不可更新: ${forbidden}`, 400, "VALIDATION_ERROR");
+  }
+
+  const values: unknown[] = [];
+  const assignments = patchColumns.map((column) => {
+    values.push(patch[column]);
+    return `"${column}" = $${values.length}`;
+  });
+  const conditions = matchColumns.map((column) => {
+    values.push(match[column]);
+    return `"${column}" = $${values.length}`;
+  });
+
+  const sql = `update public.${table} set ${assignments.join(", ")} where ${conditions.join(" and ")}`;
+  const result = client ? await client.query(sql, values) : await getPool().query(sql, values);
+  return result.rowCount ?? 0;
 }

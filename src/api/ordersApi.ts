@@ -1,4 +1,3 @@
-import { supabase } from "@/src/api/client";
 import { apiRequest } from "@/src/api/httpClient";
 import type { Database, InspectionRecord, Order, OrderItem, ReinspectionRecord } from "@/src/types";
 
@@ -112,15 +111,16 @@ export async function getOrdersWithItems(includeDeleted = false) {
 }
 
 export function subscribeOrdersProgress(onChange: () => void) {
-  const channel = supabase
-    .channel("orders-progress-live")
-    .on("postgres_changes", { event: "*", schema: "public", table: "orders" }, onChange)
-    .on("postgres_changes", { event: "*", schema: "public", table: "inspection_records" }, onChange)
-    .on("postgres_changes", { event: "*", schema: "public", table: "reinspection_records" }, onChange)
-    .subscribe();
+  // 迁移期用轮询代替 Supabase Realtime（国内 PG 不依赖 Realtime）
+  const interval = window.setInterval(onChange, 30_000);
+  const onVisibilityChange = () => {
+    if (document.visibilityState === "visible") onChange();
+  };
+  document.addEventListener("visibilitychange", onVisibilityChange);
 
   return () => {
-    supabase.removeChannel(channel);
+    window.clearInterval(interval);
+    document.removeEventListener("visibilitychange", onVisibilityChange);
   };
 }
 
@@ -176,25 +176,10 @@ export async function deleteOrderItems(itemIds: string[]) {
 
 export async function syncOrderItemIdentity(orderId: string, from: OrderItemIdentity, to: OrderItemIdentity) {
   const identityChanged = from.po_number !== to.po_number || from.sku !== to.sku || from.color !== to.color || from.size !== to.size;
-  if (!identityChanged) return { error: null };
+  if (!identityChanged) return { data: { updated: 0 }, error: null };
 
-  const fullMatchTables = ["reservation_carton_items", "unboxing_records", "shipment_items"] as const;
-  const fullMatchUpdates = fullMatchTables.map((table) =>
-    supabase
-      .from(table)
-      .update(to)
-      .eq("order_id", orderId)
-      .eq("po_number", from.po_number)
-      .eq("sku", from.sku)
-      .eq("color", from.color)
-      .eq("size", from.size)
-  );
-
-  const colorSizeTables = ["inspection_records", "reinspection_records"] as const;
-  const colorSizeUpdates = colorSizeTables.map((table) =>
-    supabase.from(table).update({ color: to.color, size: to.size }).eq("order_id", orderId).eq("color", from.color).eq("size", from.size)
-  );
-
-  const results = await Promise.all([...fullMatchUpdates, ...colorSizeUpdates]);
-  return { error: results.find((result) => result.error)?.error ?? null };
+  return apiRequest<{ updated: number }>("/api/order-items/sync-identity", {
+    method: "POST",
+    body: JSON.stringify({ orderId, from, to })
+  });
 }
