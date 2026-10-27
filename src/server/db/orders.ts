@@ -1,54 +1,8 @@
 import type { InspectionPlan, Order, OrderItem, OrderStatus, SchedulePriority, SubmitStatus } from "@/lib/types";
 import type { QueryResultRow } from "pg";
 
+import { TABLE_COLUMNS } from "./columns.ts";
 import { queryRows } from "./query.ts";
-
-const ORDER_COLUMNS = [
-  "id",
-  "created_at",
-  "deleted_at",
-  "user_id",
-  "order_type",
-  "customer_name",
-  "factory_name",
-  "po_number",
-  "sku",
-  "inbound_date",
-  "shipping_date",
-  "shipping_date_tbd",
-  "inspection_plan",
-  "reservation_remark",
-  "color",
-  "size",
-  "quantity",
-  "inbound_quantity",
-  "delivery_date",
-  "estimated_inspection_date",
-  "inspection_standard",
-  "priority",
-  "assigned_team_id",
-  "direct_ship",
-  "status"
-].join(", ");
-
-const ORDER_ITEM_COLUMNS = [
-  "id",
-  "created_at",
-  "order_id",
-  "user_id",
-  "po_number",
-  "sku",
-  "color",
-  "size",
-  "carton_count",
-  "quantity_per_carton",
-  "quantity",
-  "inbound_quantity",
-  "estimated_inspection_date",
-  "submitted_quantity",
-  "submit_status",
-  "style_factor"
-].join(", ");
 
 type OrderRow = QueryResultRow & {
   id: string;
@@ -174,7 +128,7 @@ export async function listOrders(filters: OrderFilters = {}): Promise<Order[]> {
     where.push(`inspection_plan = $${values.length}`);
   }
 
-  const sql = `select ${ORDER_COLUMNS} from public.orders${
+  const sql = `select ${TABLE_COLUMNS.orders} from public.orders${
     where.length ? ` where ${where.join(" and ")}` : ""
   } order by shipping_date asc nulls last, created_at desc`;
   const rows = await queryRows<OrderRow>(sql, values);
@@ -183,7 +137,7 @@ export async function listOrders(filters: OrderFilters = {}): Promise<Order[]> {
 
 export async function getOrderById(id: string): Promise<Order | null> {
   const rows = await queryRows<OrderRow>(
-    `select ${ORDER_COLUMNS} from public.orders where id = $1 limit 1`,
+    `select ${TABLE_COLUMNS.orders} from public.orders where id = $1 limit 1`,
     [id]
   );
   return rows.length > 0 ? mapOrderRow(rows[0]) : null;
@@ -191,7 +145,7 @@ export async function getOrderById(id: string): Promise<Order | null> {
 
 export async function listOrderItems(orderId: string): Promise<OrderItem[]> {
   const rows = await queryRows<OrderItemRow>(
-    `select ${ORDER_ITEM_COLUMNS} from public.order_items where order_id = $1 order by created_at asc`,
+    `select ${TABLE_COLUMNS.order_items} from public.order_items where order_id = $1 order by created_at asc`,
     [orderId]
   );
   return rows.map(mapOrderItemRow);
