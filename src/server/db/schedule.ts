@@ -7,8 +7,11 @@ import type {
   StyleCategory,
   TeamWorkException
 } from "@/lib/types";
+import type { QueryResultRow } from "pg";
 
-import { selectAll } from "./read.ts";
+import { TABLE_COLUMNS } from "./columns.ts";
+import { queryRows } from "./query.ts";
+import { normalizeRow, selectAll } from "./read.ts";
 
 export async function listInspectionTeams(): Promise<InspectionTeam[]> {
   return selectAll<InspectionTeam>("inspection_teams", { orderBy: "sort_order asc, created_at asc" });
@@ -64,6 +67,49 @@ export async function listTeamWorkExceptions(
     values,
     orderBy: "date asc"
   });
+}
+
+export async function upsertProductionCalendar(input: {
+  date: string;
+  is_work_day: boolean;
+  work_hours: number | null;
+  remark: string | null;
+}): Promise<ProductionCalendarEntry> {
+  const rows = await queryRows<QueryResultRow>(
+    `insert into public.production_calendar (date, is_work_day, work_hours, remark)
+     values ($1, $2, $3, $4)
+     on conflict (date) do update set
+       is_work_day = excluded.is_work_day,
+       work_hours = excluded.work_hours,
+       remark = excluded.remark
+     returning ${TABLE_COLUMNS.production_calendar}`,
+    [input.date, input.is_work_day, input.work_hours, input.remark]
+  );
+  if (rows.length === 0) throw new Error("production_calendar upsert 未返回数据");
+  return normalizeRow<ProductionCalendarEntry>(rows[0]);
+}
+
+export async function upsertTeamWorkException(input: {
+  team_id: string;
+  date: string;
+  is_working: boolean;
+  work_hours: number | null;
+  capacity_factor: number | null;
+  remark: string | null;
+}): Promise<TeamWorkException> {
+  const rows = await queryRows<QueryResultRow>(
+    `insert into public.team_work_exceptions (team_id, date, is_working, work_hours, capacity_factor, remark)
+     values ($1, $2, $3, $4, $5, $6)
+     on conflict (team_id, date) do update set
+       is_working = excluded.is_working,
+       work_hours = excluded.work_hours,
+       capacity_factor = excluded.capacity_factor,
+       remark = excluded.remark
+     returning ${TABLE_COLUMNS.team_work_exceptions}`,
+    [input.team_id, input.date, input.is_working, input.work_hours, input.capacity_factor, input.remark]
+  );
+  if (rows.length === 0) throw new Error("team_work_exceptions upsert 未返回数据");
+  return normalizeRow<TeamWorkException>(rows[0]);
 }
 
 export async function listScheduleTasks(

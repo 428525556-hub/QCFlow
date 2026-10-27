@@ -13,8 +13,11 @@ export function pgError(error: unknown): ApiError {
     case "23505":
       return new ApiError(message, 409, "CONFLICT");
     case "23502":
+    case "23503":
     case "23514":
     case "22P02":
+    case "22007":
+    case "22008":
     case "22023":
       return new ApiError(message, 400, "VALIDATION_ERROR");
     default:
