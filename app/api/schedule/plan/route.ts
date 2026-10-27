@@ -1,10 +1,30 @@
 import { apiSuccess } from "@/src/server/apiResponse";
 import { withApiHandler } from "@/src/server/apiHandler";
+import { getDataBackend } from "@/src/server/db/backend";
+import { listOrderItems, listOrders } from "@/src/server/db/orders";
+import { pgError } from "@/src/server/db/pgErrors";
+import {
+  listInspectionTeams,
+  listProductionCalendar,
+  listScheduleProgressByTaskIds,
+  listScheduleTasks,
+  listTeamWorkExceptions
+} from "@/src/server/db/schedule";
+import { callScheduleRpc } from "@/src/server/db/scheduleRpc";
 import { databaseError } from "@/src/server/errors";
 import { createRequestSupabaseClient, requireStaffProfile } from "@/src/server/supabaseServer";
 import { addDays, teamCapacityUnits, taskConsumptionUnits, type CalendarDay, type Team } from "@/src/services/scheduling";
 import { todayKey, toInspectionStage } from "@/src/services/scheduleService";
-import type { InspectionScheduleTask, InspectionStage, InspectionTeam, Order, OrderItem } from "@/src/types";
+import type {
+  InspectionScheduleTask,
+  InspectionStage,
+  InspectionTeam,
+  Order,
+  OrderItem,
+  ProductionCalendarEntry,
+  ScheduleProgressRecord,
+  TeamWorkException
+} from "@/src/types";
 
 function riskFromExplanation(explanation: Record<string, unknown> | null): string {
   const level = explanation?.riskLevel;
@@ -12,45 +32,100 @@ function riskFromExplanation(explanation: Record<string, unknown> | null): strin
 }
 
 export const GET = withApiHandler(async (request) => {
-  await requireStaffProfile(request);
+  const { user } = await requireStaffProfile(request);
   const params = request.nextUrl.searchParams;
   const from = params.get("from") ?? todayKey();
   const days = Math.min(90, Math.max(1, Number(params.get("days") ?? 14) || 14));
   const to = addDays(from, days - 1);
   const teamFilter = params.get("teamId");
-  const supabase = createRequestSupabaseClient(request);
+  const backend = getDataBackend();
+  const supabase = backend === "supabase" ? createRequestSupabaseClient(request) : null;
 
-  await supabase.rpc("rollover_schedule", { payload: { date: from } });
+  let taskRows: InspectionScheduleTask[];
+  let teamRows: InspectionTeam[];
+  let calendarRows: ProductionCalendarEntry[];
+  let exceptions: TeamWorkException[];
 
-  const [{ data: tasks, error: taskError }, { data: teamData, error: teamError }, { data: calendarRows, error: calendarError }, { data: exceptions, error: exceptionError }] =
-    await Promise.all([
-      supabase.from("inspection_schedule").select("*").gte("scheduled_date", from).lte("scheduled_date", to).not("status", "in", "(\"已取消\",\"已调整\")"),
-      supabase.from("inspection_teams").select("*"),
-      supabase.from("production_calendar").select("*").gte("date", from).lte("date", to),
-      supabase.from("team_work_exceptions").select("*").gte("date", from).lte("date", to)
+  if (backend === "pg") {
+    try {
+      await callScheduleRpc({
+        userId: user.id,
+        email: user.email ?? "",
+        fn: "rollover_schedule",
+        payload: { date: from }
+      });
+      [taskRows, teamRows, calendarRows, exceptions] = await Promise.all([
+        listScheduleTasks({ from, to, excludeCancelled: true }),
+        listInspectionTeams(),
+        listProductionCalendar({ from, to }),
+        listTeamWorkExceptions({ from, to })
+      ]);
+    } catch (error) {
+      throw pgError(error);
+    }
+  } else {
+    await supabase!.rpc("rollover_schedule", { payload: { date: from } });
+    const [
+      { data: tasks, error: taskError },
+      { data: teamData, error: teamError },
+      { data: calendarData, error: calendarError },
+      { data: exceptionData, error: exceptionError }
+    ] = await Promise.all([
+      supabase!.from("inspection_schedule").select("*").gte("scheduled_date", from).lte("scheduled_date", to).not("status", "in", "(\"已取消\",\"已调整\")"),
+      supabase!.from("inspection_teams").select("*"),
+      supabase!.from("production_calendar").select("*").gte("date", from).lte("date", to),
+      supabase!.from("team_work_exceptions").select("*").gte("date", from).lte("date", to)
     ]);
-  if (taskError) throw databaseError(taskError);
-  if (teamError) throw databaseError(teamError);
-  if (calendarError) throw databaseError(calendarError);
-  if (exceptionError) throw databaseError(exceptionError);
+    if (taskError) throw databaseError(taskError);
+    if (teamError) throw databaseError(teamError);
+    if (calendarError) throw databaseError(calendarError);
+    if (exceptionError) throw databaseError(exceptionError);
+    taskRows = (tasks ?? []) as InspectionScheduleTask[];
+    teamRows = (teamData ?? []) as InspectionTeam[];
+    calendarRows = (calendarData ?? []) as ProductionCalendarEntry[];
+    exceptions = (exceptionData ?? []) as TeamWorkException[];
+  }
 
-  const taskRows = (tasks ?? []) as InspectionScheduleTask[];
-  const teamRows = (teamData ?? []) as InspectionTeam[];
   const orderIds = Array.from(new Set(taskRows.map((task) => task.order_id)));
   const itemIds = Array.from(new Set(taskRows.map((task) => task.order_item_id).filter((id): id is string => Boolean(id))));
   const taskIds = taskRows.map((task) => task.id);
 
-  const [{ data: orderRows }, { data: itemRows }, { data: progressRows }] = await Promise.all([
-    orderIds.length ? supabase.from("orders").select("*").in("id", orderIds) : Promise.resolve({ data: [], error: null }),
-    itemIds.length ? supabase.from("order_items").select("*").in("id", itemIds) : Promise.resolve({ data: [], error: null }),
-    taskIds.length ? supabase.from("schedule_progress_records").select("*").in("task_id", taskIds) : Promise.resolve({ data: [], error: null })
-  ]);
+  let orderRows: Order[];
+  let itemRows: OrderItem[];
+  let progressRows: ScheduleProgressRecord[];
+  if (backend === "pg") {
+    try {
+      [orderRows, itemRows, progressRows] = await Promise.all([
+        listOrders({ orderIds, includeDeleted: true }),
+        listOrderItems({ itemIds }),
+        listScheduleProgressByTaskIds(taskIds)
+      ]);
+    } catch (error) {
+      throw pgError(error);
+    }
+  } else {
+    const [
+      { data: orders, error: orderError },
+      { data: items, error: itemError },
+      { data: progress, error: progressError }
+    ] = await Promise.all([
+      orderIds.length ? supabase!.from("orders").select("*").in("id", orderIds) : Promise.resolve({ data: [], error: null }),
+      itemIds.length ? supabase!.from("order_items").select("*").in("id", itemIds) : Promise.resolve({ data: [], error: null }),
+      taskIds.length ? supabase!.from("schedule_progress_records").select("*").in("task_id", taskIds) : Promise.resolve({ data: [], error: null })
+    ]);
+    if (orderError) throw databaseError(orderError);
+    if (itemError) throw databaseError(itemError);
+    if (progressError) throw databaseError(progressError);
+    orderRows = (orders ?? []) as Order[];
+    itemRows = (items ?? []) as OrderItem[];
+    progressRows = (progress ?? []) as ScheduleProgressRecord[];
+  }
 
-  const orderById = new Map((orderRows ?? []).map((order) => [order.id, order]));
-  const itemById = new Map((itemRows ?? []).map((item) => [item.id, item]));
+  const orderById = new Map(orderRows.map((order) => [order.id, order]));
+  const itemById = new Map(itemRows.map((item) => [item.id, item]));
   const teamById = new Map(teamRows.map((team) => [team.id, team]));
   const progressCountByTask = new Map<string, number>();
-  for (const row of progressRows ?? []) {
+  for (const row of progressRows) {
     progressCountByTask.set(row.task_id, (progressCountByTask.get(row.task_id) ?? 0) + 1);
   }
 
@@ -70,10 +145,10 @@ export const GET = withApiHandler(async (request) => {
   const teamMap = new Map(teams.map((team) => [team.id, team]));
 
   const calendar: Record<string, CalendarDay> = {};
-  for (const entry of calendarRows ?? []) {
+  for (const entry of calendarRows) {
     calendar[entry.date] = { isWorkDay: entry.is_work_day, workHours: entry.work_hours != null ? Number(entry.work_hours) : null, teamExceptions: {} };
   }
-  for (const exception of exceptions ?? []) {
+  for (const exception of exceptions) {
     const day = calendar[exception.date] ?? { isWorkDay: true, workHours: null, teamExceptions: {} };
     day.teamExceptions[exception.team_id] = {
       isWorking: exception.is_working,

@@ -8,6 +8,8 @@ export function pgError(error: unknown): ApiError {
   switch (value?.code) {
     case "42501":
       return new ApiError("Forbidden", 403, "FORBIDDEN");
+    case "P0002":
+      return new ApiError(message, 404, "NOT_FOUND");
     case "23505":
       return new ApiError(message, 409, "CONFLICT");
     case "23502":

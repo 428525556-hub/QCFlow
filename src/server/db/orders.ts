@@ -56,6 +56,7 @@ export type OrderFilters = {
   customerName?: string | null;
   inspectionPlan?: InspectionPlan | null;
   includeDeleted?: boolean;
+  orderIds?: string[] | null;
 };
 
 function toIso(value: Date | string | null): string | null {
@@ -119,7 +120,12 @@ export async function listOrders(filters: OrderFilters = {}): Promise<Order[]> {
   const values: unknown[] = [];
   const where: string[] = [];
 
+  if (filters.orderIds && filters.orderIds.length === 0) return [];
   if (!filters.includeDeleted) where.push("deleted_at is null");
+  if (filters.orderIds && filters.orderIds.length > 0) {
+    values.push(filters.orderIds);
+    where.push(`id = any($${values.length}::uuid[])`);
+  }
   if (filters.customerName) {
     values.push(filters.customerName);
     where.push(`customer_name = $${values.length}`);
@@ -145,15 +151,20 @@ export async function getOrderById(id: string): Promise<Order | null> {
 }
 
 export async function listOrderItems(
-  filters: { orderId?: string | null; orderIds?: string[] | null } = {}
+  filters: { orderId?: string | null; orderIds?: string[] | null; itemIds?: string[] | null } = {}
 ): Promise<OrderItem[]> {
   const conditions: string[] = [];
   const values: unknown[] = [];
 
   if (filters.orderIds && filters.orderIds.length === 0) return [];
+  if (filters.itemIds && filters.itemIds.length === 0) return [];
   if (filters.orderId) {
     values.push(filters.orderId);
     conditions.push(`order_id = $${values.length}`);
+  }
+  if (filters.itemIds && filters.itemIds.length > 0) {
+    values.push(filters.itemIds);
+    conditions.push(`id = any($${values.length}::uuid[])`);
   }
   if (filters.orderIds && filters.orderIds.length > 0) {
     values.push(filters.orderIds);

@@ -1,5 +1,9 @@
 import { apiSuccess } from "@/src/server/apiResponse";
 import { withApiHandler } from "@/src/server/apiHandler";
+import { getDataBackend } from "@/src/server/db/backend";
+import { pgError } from "@/src/server/db/pgErrors";
+import { getScheduleTaskById, listScheduleProgress } from "@/src/server/db/schedule";
+import { callScheduleRpc } from "@/src/server/db/scheduleRpc";
 import { ApiError, databaseError } from "@/src/server/errors";
 import { createRequestSupabaseClient, requireStaffProfile } from "@/src/server/supabaseServer";
 import type { Database, Json } from "@/src/types";
@@ -9,6 +13,20 @@ type Context = { params: { id: string } };
 
 export const GET = withApiHandler<Context>(async (request, { params }) => {
   await requireStaffProfile(request);
+  if (getDataBackend() === "pg") {
+    try {
+      const [task, progress] = await Promise.all([
+        getScheduleTaskById(params.id),
+        listScheduleProgress(params.id)
+      ]);
+      if (!task) throw new ApiError("Task not found", 404, "NOT_FOUND");
+      return apiSuccess({ task, progress });
+    } catch (error) {
+      if (error instanceof ApiError) throw error;
+      throw pgError(error);
+    }
+  }
+
   const supabase = createRequestSupabaseClient(request);
   const [{ data: task, error }, { data: progress, error: progressError }] = await Promise.all([
     supabase.from("inspection_schedule").select("*").eq("id", params.id).maybeSingle(),
@@ -21,11 +39,10 @@ export const GET = withApiHandler<Context>(async (request, { params }) => {
 });
 
 export const PATCH = withApiHandler<Context>(async (request, { params }) => {
-  await requireStaffProfile(request);
+  const { user } = await requireStaffProfile(request);
   const payload = (await request.json()) as TaskUpdate & { reason?: string; action?: string };
   if (!payload.reason?.trim()) throw new ApiError("reason is required", 400, "VALIDATION_ERROR");
 
-  const supabase = createRequestSupabaseClient(request);
   const rpcPayload: Record<string, unknown> = {
     task_id: params.id,
     reason: payload.reason,
@@ -38,6 +55,22 @@ export const PATCH = withApiHandler<Context>(async (request, { params }) => {
   if (payload.locked !== undefined) rpcPayload.locked = payload.locked;
   if (payload.remark !== undefined) rpcPayload.remark = payload.remark;
 
+  if (getDataBackend() === "pg") {
+    try {
+      return apiSuccess(
+        await callScheduleRpc({
+          userId: user.id,
+          email: user.email ?? "",
+          fn: "apply_manual_adjust",
+          payload: rpcPayload
+        })
+      );
+    } catch (error) {
+      throw pgError(error);
+    }
+  }
+
+  const supabase = createRequestSupabaseClient(request);
   const { data, error } = await supabase.rpc("apply_manual_adjust", { payload: rpcPayload as Json });
   if (error) throw databaseError(error);
   return apiSuccess(data);

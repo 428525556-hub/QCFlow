@@ -5,10 +5,12 @@ import type {
   Database,
   InspectionPlan,
   InspectionRecord,
+  InspectionScheduleTask,
   InspectionStage,
   InspectionTeam,
   Order,
   OrderItem,
+  ProductionCalendarEntry,
   ReinspectionRecord,
   TeamWorkException
 } from "@/src/types";
@@ -58,12 +60,22 @@ export type ScheduleLoadResult = {
   noTeamUnitIds: string[];
 };
 
+export type ScheduleInputRows = {
+  teams: InspectionTeam[];
+  calendar: ProductionCalendarEntry[];
+  exceptions: TeamWorkException[];
+  orders: Order[];
+  items: OrderItem[];
+  records: InspectionRecord[];
+  reinspections: ReinspectionRecord[];
+  tasks: InspectionScheduleTask[];
+};
+
 export async function loadScheduleInputs(
   supabase: SupabaseClient<Database>,
   options?: { date?: string; replaceAuto?: boolean }
 ): Promise<ScheduleLoadResult> {
   const today = options?.date ?? todayKey();
-  const replaceAuto = options?.replaceAuto ?? false;
   const horizonEnd = addDays(today, 180);
 
   const [teamResult, calendarResult, exceptionResult, orderResult, itemResult, recordResult, reinspectionResult, taskResult] = await Promise.all([
@@ -86,13 +98,36 @@ export async function loadScheduleInputs(
   if (reinspectionResult.error) throw reinspectionResult.error;
   if (taskResult.error) throw taskResult.error;
 
-  const teamRows = (teamResult.data ?? []) as InspectionTeam[];
-  const orders = (orderResult.data ?? []) as Order[];
-  const items = (itemResult.data ?? []) as OrderItem[];
-  const records = (recordResult.data ?? []) as InspectionRecord[];
-  const reinspections = (reinspectionResult.data ?? []) as ReinspectionRecord[];
-  const tasks = taskResult.data ?? [];
-  const exceptions = (exceptionResult.data ?? []) as TeamWorkException[];
+  return buildScheduleInputs(
+    {
+      teams: (teamResult.data ?? []) as InspectionTeam[],
+      calendar: (calendarResult.data ?? []) as ProductionCalendarEntry[],
+      exceptions: (exceptionResult.data ?? []) as TeamWorkException[],
+      orders: (orderResult.data ?? []) as Order[],
+      items: (itemResult.data ?? []) as OrderItem[],
+      records: (recordResult.data ?? []) as InspectionRecord[],
+      reinspections: (reinspectionResult.data ?? []) as ReinspectionRecord[],
+      tasks: (taskResult.data ?? []) as InspectionScheduleTask[]
+    },
+    options
+  );
+}
+
+export function buildScheduleInputs(
+  rows: ScheduleInputRows,
+  options?: { date?: string; replaceAuto?: boolean }
+): ScheduleLoadResult {
+  const today = options?.date ?? todayKey();
+  const replaceAuto = options?.replaceAuto ?? false;
+  const { teamRows, orders: allOrders, items, records, reinspections, tasks, exceptions } = {
+    teamRows: rows.teams,
+    orders: rows.orders.filter((order) => order.status !== "已完成" && order.deleted_at == null),
+    items: rows.items,
+    records: rows.records,
+    reinspections: rows.reinspections,
+    tasks: rows.tasks,
+    exceptions: rows.exceptions
+  };
 
   const teams: Team[] = teamRows.map((team) => ({
     id: team.id,
@@ -109,7 +144,7 @@ export async function loadScheduleInputs(
   }));
 
   const calendar: Record<string, CalendarDay> = {};
-  for (const entry of calendarResult.data ?? []) {
+  for (const entry of rows.calendar) {
     calendar[entry.date] = {
       isWorkDay: entry.is_work_day,
       workHours: entry.work_hours != null ? Number(entry.work_hours) : null,
@@ -127,12 +162,12 @@ export async function loadScheduleInputs(
   }
 
   // 直接出货订单不参与检品排程
-  const schedulableOrders = orders.filter((order) => !order.direct_ship);
+  const schedulableOrders = allOrders.filter((order) => !order.direct_ship);
   const orderById = new Map(schedulableOrders.map((order) => [order.id, order]));
   const itemById = new Map(items.map((item) => [item.id, item]));
   const orderIds = schedulableOrders.map((order) => order.id);
 
-  const recordDerivedPassed = buildRecordDerivedPassed(orders, items, records, reinspections);
+  const recordDerivedPassed = buildRecordDerivedPassed(allOrders, items, records, reinspections);
 
   // 未完成任务：已排程量 / 已完成量（进度缓存由事务函数维护）
   // replaceAuto=true 时，auto 任务将被本次重排替换，其剩余量重新进入排程池，
@@ -186,7 +221,7 @@ export async function loadScheduleInputs(
   }
 
   const skipSummary = {
-    directShipOrders: orders.filter((order) => order.direct_ship).length,
+    directShipOrders: allOrders.filter((order) => order.direct_ship).length,
     pendingItems: units.filter((unit) => unit.submitStatus === "pending").length,
     pausedItems: units.filter((unit) => unit.submitStatus === "paused").length,
     noSubmittableQuantity: units.filter((unit) => unit.submitStatus === "ready" && unit.quantity > 0 && unit.submittedQuantity - unit.inspectedCompleted - unit.alreadyScheduled <= 0).length,
@@ -368,8 +403,29 @@ export type UrgentInsertPreview = {
   summary: { delayedOrders: number; newRedRisks: number; newOrangeRisks: number };
 };
 
-export async function previewUrgentInsert(supabase: SupabaseClient<Database>, body: UrgentInsertInput): Promise<UrgentInsertPreview | null> {
+type RelatedScheduleTask = Pick<InspectionScheduleTask, "id" | "scheduled_date" | "order_item_id">;
+
+export async function previewUrgentInsert(
+  supabase: SupabaseClient<Database>,
+  body: UrgentInsertInput
+): Promise<UrgentInsertPreview | null> {
   const inputs = await loadScheduleInputs(supabase);
+  return previewUrgentInsertFromInputs(inputs, body, async (orderItemIds) => {
+    const { data, error } = await supabase
+      .from("inspection_schedule")
+      .select("id, scheduled_date, order_item_id")
+      .in("order_item_id", orderItemIds)
+      .not("status", "in", "(\"已取消\",\"已调整\")");
+    if (error) throw error;
+    return data ?? [];
+  });
+}
+
+export async function previewUrgentInsertFromInputs(
+  inputs: ScheduleLoadResult,
+  body: UrgentInsertInput,
+  loadRelatedTasks: (orderItemIds: string[]) => Promise<RelatedScheduleTask[]>
+): Promise<UrgentInsertPreview | null> {
   const item = inputs.items.find((row) => row.id === body.order_item_id);
   const order = item ? inputs.orders.find((row) => row.id === item.order_id) : undefined;
   if (!item || !order) return null;
@@ -423,12 +479,8 @@ export async function previewUrgentInsert(supabase: SupabaseClient<Database>, bo
 
   const shiftedTasks: UrgentInsertPreview["shiftedTasks"] = [];
   if (impactedUnits.length > 0) {
-    const { data: dbTasks } = await supabase
-      .from("inspection_schedule")
-      .select("id, scheduled_date, order_item_id")
-      .in("order_item_id", impactedUnits.map((row) => row.unitId))
-      .not("status", "in", "(\"已取消\",\"已调整\")");
-    for (const task of dbTasks ?? []) {
+    const dbTasks = await loadRelatedTasks(impactedUnits.map((row) => row.unitId));
+    for (const task of dbTasks) {
       const impact = impactedUnits.find((row) => row.unitId === task.order_item_id);
       if (impact && impact.afterProjected) {
         shiftedTasks.push({ task_id: task.id, fromDate: task.scheduled_date, toDate: impact.afterProjected });

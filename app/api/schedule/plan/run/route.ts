@@ -2,6 +2,10 @@ import { randomUUID } from "crypto";
 
 import { apiSuccess } from "@/src/server/apiResponse";
 import { withApiHandler } from "@/src/server/apiHandler";
+import { getDataBackend } from "@/src/server/db/backend";
+import { pgError } from "@/src/server/db/pgErrors";
+import { callScheduleRpc } from "@/src/server/db/scheduleRpc";
+import { loadScheduleInputsPg } from "@/src/server/scheduleInputs";
 import { ApiError, databaseError } from "@/src/server/errors";
 import { createRequestSupabaseClient, requireStaffProfile } from "@/src/server/supabaseServer";
 import { runSchedule } from "@/src/services/scheduling";
@@ -9,14 +13,30 @@ import { loadScheduleInputs } from "@/src/services/scheduleService";
 import type { Json } from "@/src/types";
 
 export const POST = withApiHandler(async (request) => {
-  await requireStaffProfile(request);
+  const { user } = await requireStaffProfile(request);
   const body = (await request.json().catch(() => ({}))) as { reason?: string };
-  const supabase = createRequestSupabaseClient(request);
+  const backend = getDataBackend();
+  const supabase = backend === "supabase" ? createRequestSupabaseClient(request) : null;
 
-  const rolloverResult = await supabase.rpc("rollover_schedule", { payload: {} as Json });
-  if (rolloverResult.error) throw databaseError(rolloverResult.error);
+  let inputs;
+  if (backend === "pg") {
+    try {
+      await callScheduleRpc({
+        userId: user.id,
+        email: user.email ?? "",
+        fn: "rollover_schedule",
+        payload: {}
+      });
+      inputs = await loadScheduleInputsPg({ replaceAuto: true });
+    } catch (error) {
+      throw pgError(error);
+    }
+  } else {
+    const rolloverResult = await supabase!.rpc("rollover_schedule", { payload: {} as Json });
+    if (rolloverResult.error) throw databaseError(rolloverResult.error);
+    inputs = await loadScheduleInputs(supabase!, { replaceAuto: true });
+  }
 
-  const inputs = await loadScheduleInputs(supabase, { replaceAuto: true });
   const noTeamSet = new Set(inputs.noTeamUnitIds);
   const readyUnits = inputs.units.filter((unit) => unit.submitStatus === "ready" && unit.quantity > 0 && !noTeamSet.has(unit.id));
   if (readyUnits.length === 0) {
@@ -44,15 +64,30 @@ export const POST = withApiHandler(async (request) => {
     remark: assignment.remark ?? null
   }));
 
-  const { data, error } = await supabase.rpc("apply_schedule_run", {
-    payload: {
-      run_id: runId,
-      tasks,
-      cancel_ids: inputs.cancelableTaskIds,
-      reason: body.reason ?? "自动重新排程"
-    } as unknown as Json
-  });
-  if (error) throw databaseError(error);
+  const payload = {
+    run_id: runId,
+    tasks,
+    cancel_ids: inputs.cancelableTaskIds,
+    reason: body.reason ?? "自动重新排程"
+  };
+
+  let data: unknown;
+  if (backend === "pg") {
+    try {
+      data = await callScheduleRpc({
+        userId: user.id,
+        email: user.email ?? "",
+        fn: "apply_schedule_run",
+        payload
+      });
+    } catch (error) {
+      throw pgError(error);
+    }
+  } else {
+    const result = await supabase!.rpc("apply_schedule_run", { payload: payload as unknown as Json });
+    if (result.error) throw databaseError(result.error);
+    data = result.data;
+  }
 
   return apiSuccess({
     run_id: runId,
