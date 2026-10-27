@@ -1,9 +1,14 @@
 import { apiSuccess } from "@/src/server/apiResponse";
 import { withApiHandler } from "@/src/server/apiHandler";
-import { assertWriteBackendSupported, getDataBackend } from "@/src/server/db/backend";
+import { getDataBackend } from "@/src/server/db/backend";
+import { TABLE_COLUMNS } from "@/src/server/db/columns";
+import { pgError } from "@/src/server/db/pgErrors";
+import { withTransaction } from "@/src/server/db/query";
 import { listReservationCartonItems, listReservationCartons } from "@/src/server/db/reservations";
+import { insertRows } from "@/src/server/db/write";
 import { ApiError, databaseError } from "@/src/server/errors";
 import { createRequestSupabaseClient, requireStaffProfile } from "@/src/server/supabaseServer";
+import type { ReservationCarton, ReservationCartonItem } from "@/lib/types";
 import type { Database } from "@/src/types";
 
 type ReservationCartonInsert = Database["public"]["Tables"]["reservation_cartons"]["Insert"];
@@ -35,7 +40,6 @@ export const GET = withApiHandler(async (request) => {
 
 export const POST = withApiHandler(async (request) => {
   const { user } = await requireStaffProfile(request);
-  assertWriteBackendSupported();
   const payload = (await request.json()) as {
     cartons: ReservationCartonInsert[];
     items: ReservationCartonItemInsert[];
@@ -46,6 +50,32 @@ export const POST = withApiHandler(async (request) => {
   const supabase = createRequestSupabaseClient(request);
   const cartonRows = payload.cartons.map((carton) => ({ ...carton, user_id: user.id }));
   const itemRows = (payload.items ?? []).map((item) => ({ ...item, user_id: user.id }));
+
+  if (getDataBackend() === "pg") {
+    try {
+      const result = await withTransaction(async (client) => {
+        const cartons = await insertRows<ReservationCarton>(
+          "reservation_cartons",
+          cartonRows,
+          TABLE_COLUMNS.reservation_cartons,
+          client
+        );
+        const items =
+          itemRows.length > 0
+            ? await insertRows<ReservationCartonItem>(
+                "reservation_carton_items",
+                itemRows,
+                TABLE_COLUMNS.reservation_carton_items,
+                client
+              )
+            : [];
+        return { cartons, items };
+      });
+      return apiSuccess(result, 201);
+    } catch (error) {
+      throw pgError(error);
+    }
+  }
 
   const { data: cartons, error: cartonsError } = await supabase.from("reservation_cartons").insert(cartonRows).select("*");
   if (cartonsError) throw databaseError(cartonsError);

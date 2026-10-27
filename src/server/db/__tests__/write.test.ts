@@ -5,6 +5,7 @@ import { TABLE_COLUMNS } from "../columns.ts";
 import { insertOrderWithItems } from "../orders.ts";
 import { closePool, getPool } from "../pool.ts";
 import { withTransaction } from "../query.ts";
+import { upsertShipmentBatch } from "../shipments.ts";
 import { deleteRowsByIds, insertRows, updateRowById } from "../write.ts";
 
 describe("write.insertRows", () => {
@@ -240,6 +241,106 @@ describe("订单事务（集成，需 DATABASE_URL）", () => {
 
         const remaining = await client.query("select count(*)::int as count from public.orders where id = $1", [orderId]);
         assert.equal(remaining.rows[0].count, 0);
+
+        throw new RollbackSignal();
+      });
+    } catch (error) {
+      if (!(error instanceof RollbackSignal)) throw error;
+    }
+  });
+
+  test("预约箱号 + 明细写入（事务内，回滚）", { skip: !hasDatabase }, async () => {
+    try {
+      await withTransaction(async (client) => {
+        await client.query(
+          "select set_config('app.user_id', $1, true), set_config('app.user_email', $2, true)",
+          [userId, "parity-test@example.com"]
+        );
+        await client.query(
+          "insert into public.users (id, email) values ($1, $2) on conflict (id) do nothing",
+          [userId, "parity-test@example.com"]
+        );
+
+        const orderId = await insertOrderWithItems(client, {
+          order: {
+            order_type: "reservation",
+            customer_name: "预约箱测试客户",
+            factory_name: "预约箱测试工厂",
+            po_number: "PO-RES-0001",
+            sku: "SKU-RES-0001",
+            inbound_date: "2026-10-20",
+            shipping_date: "2026-11-01",
+            inspection_plan: "both",
+            reservation_remark: null,
+            color: "黑",
+            size: "42",
+            quantity: 10,
+            inbound_quantity: 0,
+            status: "未开始"
+          },
+          items: [
+            {
+              po_number: "PO-RES-0001",
+              sku: "SKU-RES-0001",
+              color: "黑",
+              size: "42",
+              carton_count: 1,
+              quantity_per_carton: 10,
+              quantity: 10,
+              inbound_quantity: 0
+            }
+          ]
+        });
+
+        const [carton] = await insertRows<{ id: string }>(
+          "reservation_cartons",
+          [{ order_id: orderId, user_id: userId, carton_no: "NO.001" }],
+          TABLE_COLUMNS.reservation_cartons,
+          client
+        );
+        assert.ok(carton.id);
+
+        const [item] = await insertRows<{ id: string }>(
+          "reservation_carton_items",
+          [
+            {
+              reservation_carton_id: carton.id,
+              order_id: orderId,
+              user_id: userId,
+              po_number: "PO-RES-0001",
+              sku: "SKU-RES-0001",
+              color: "黑",
+              size: "42",
+              quantity: 10
+            }
+          ],
+          TABLE_COLUMNS.reservation_carton_items,
+          client
+        );
+        assert.ok(item.id);
+
+        throw new RollbackSignal();
+      });
+    } catch (error) {
+      if (!(error instanceof RollbackSignal)) throw error;
+    }
+  });
+
+  test("出货批次 upsert（事务内，回滚）", { skip: !hasDatabase }, async () => {
+    try {
+      await withTransaction(async (client) => {
+        const first = await upsertShipmentBatch(
+          { customerName: "批次测试客户", shippingDate: "2026-11-01", batchNo: "B1", remark: "第一次" },
+          client
+        );
+        const second = await upsertShipmentBatch(
+          { customerName: "批次测试客户", shippingDate: "2026-11-01", batchNo: "B2", remark: "第二次" },
+          client
+        );
+
+        assert.equal(second.id, first.id);
+        assert.equal(second.batch_no, "B2");
+        assert.equal(second.remark, "第二次");
 
         throw new RollbackSignal();
       });
