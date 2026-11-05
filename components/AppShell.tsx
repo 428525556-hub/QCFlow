@@ -27,7 +27,7 @@ const languageLabels: Record<Language, string> = {
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const isLogin = pathname === "/login";
+  const isLogin = pathname === "/login" || pathname.startsWith("/login/reset");
   const profile = useCurrentProfile();
   const { language, setLanguage, t } = useLanguage();
   const [email, setEmail] = useState("");

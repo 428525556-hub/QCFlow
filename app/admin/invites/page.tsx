@@ -1,7 +1,12 @@
 ﻿"use client";
 
-import { ADMIN_EMAIL, createInviteCode, formatInviteCode, hashInviteCode, isAdminEmail } from "@/lib/security";
-import { getCurrentUser, getRegistrationInvites, insertRegistrationInvite, updateRegistrationInvite } from "@/src/api/userApi";
+import { ADMIN_EMAIL, isAdminEmail } from "@/lib/security";
+import {
+  createRegistrationInvite,
+  getCurrentUser,
+  getRegistrationInvites,
+  updateRegistrationInvite
+} from "@/src/api/userApi";
 import type { RegistrationInvite } from "@/lib/types";
 import { Copy, KeyRound, Plus, ShieldCheck, XCircle } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -33,7 +38,7 @@ export default function AdminInvitesPage() {
     }
 
     const { data, error } = await getRegistrationInvites();
-    if (error) setMessage(`${error.message}。请确认 Supabase 已执行最新邀请码 SQL。`);
+    if (error) setMessage(error.message);
     setInvites((data ?? []) as RegistrationInvite[]);
     setLoading(false);
   }
@@ -47,38 +52,25 @@ export default function AdminInvitesPage() {
     setMessage("");
     setNewCode("");
 
-    const { data: userResult } = await getCurrentUser();
-    const user = userResult.user;
-    if (!user || !isAdminEmail(user.email)) {
-      setMessage("当前账号没有管理员权限。");
-      setCreating(false);
-      return;
-    }
     if ((accountRole === "client" || accountRole === "field_inspector") && !customerName.trim()) {
       setMessage("客户账号和出差检品账号必须填写客户名称，并且要和订单里的客户名称完全一致。");
       setCreating(false);
       return;
     }
 
-    const code = createInviteCode();
-    const codeHash = await hashInviteCode(code);
-    const expiresAt = new Date(Date.now() + Math.max(1, days) * 24 * 60 * 60 * 1000).toISOString();
-    const { error } = await insertRegistrationInvite({
-      created_by_user_id: user.id,
-      created_by_email: ADMIN_EMAIL,
-      code_hash: codeHash,
+    const { data, error } = await createRegistrationInvite({
       role: accountRole,
       customer_name: accountRole === "client" || accountRole === "field_inspector" ? customerName.trim() : null,
-      expires_at: expiresAt
+      days
     });
 
-    if (error) {
-      setMessage(`${error.message}。请确认 Supabase 已执行最新邀请码 SQL。`);
+    if (error || !data) {
+      setMessage(error?.message ?? "生成邀请码失败");
       setCreating(false);
       return;
     }
 
-    setNewCode(formatInviteCode(code));
+    setNewCode(data.code);
     await load();
     setCreating(false);
   }

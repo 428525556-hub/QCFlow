@@ -5,11 +5,28 @@ services:
       args:
         NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
         NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+        NEXT_PUBLIC_AUTH_BACKEND: ${NEXT_PUBLIC_AUTH_BACKEND:-supabase}
     image: qcflow:latest
     container_name: qcflow
     restart: unless-stopped
     ports:
       - "8443:3000"
+    environment:
+      AUTH_BACKEND: ${AUTH_BACKEND:-supabase}
+      JWT_SECRET: ${JWT_SECRET:-}
+      AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-true}
+      AUTH_BASE_URL: ${AUTH_BASE_URL:-}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+      DATA_BACKEND: ${DATA_BACKEND:-supabase}
+      DATABASE_URL: ${DATABASE_URL:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-465}
+      SMTP_SECURE: ${SMTP_SECURE:-true}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+    depends_on:
+      - qcflow-pg
 
   qcflow-pg:
     image: postgres:16-alpine

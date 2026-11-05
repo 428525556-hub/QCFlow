@@ -54,8 +54,16 @@ create table if not exists public.users (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   email text not null unique check (email = lower(email)),
+  password_hash text,
+  email_verified_at timestamptz,
+  failed_login_attempts integer not null default 0 check (failed_login_attempts >= 0),
+  locked_until timestamptz,
   disabled boolean not null default false
 );
+
+create trigger trg_users_updated_at
+before update on public.users
+for each row execute function app.set_updated_at();
 
 create table if not exists public.user_profiles (
   id uuid primary key references public.users(id) on delete cascade,
@@ -69,6 +77,24 @@ create table if not exists public.user_profiles (
 create trigger trg_user_profiles_updated_at
 before update on public.user_profiles
 for each row execute function app.set_updated_at();
+
+create table if not exists public.auth_sessions (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.users(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  expires_at timestamptz not null,
+  revoked_at timestamptz,
+  user_agent text
+);
+
+create table if not exists public.password_reset_tokens (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.users(id) on delete cascade,
+  token_hash text not null unique,
+  created_at timestamptz not null default now(),
+  expires_at timestamptz not null,
+  used_at timestamptz
+);
 
 -- ---------- 2. 班组 / 款式 / 日历 ----------
 create table if not exists public.inspection_teams (
@@ -866,6 +892,10 @@ create index if not exists shipment_items_carton_id_idx on public.shipment_items
 create index if not exists dispatch_records_order_id_idx on public.dispatch_records (order_id);
 create index if not exists unboxing_records_order_idx on public.unboxing_records (order_id, created_at desc);
 create index if not exists registration_invites_code_hash_idx on public.registration_invites (code_hash);
+create index if not exists auth_sessions_user_id_idx on public.auth_sessions (user_id, created_at desc);
+create index if not exists auth_sessions_expires_at_idx on public.auth_sessions (expires_at);
+create index if not exists password_reset_tokens_user_id_idx on public.password_reset_tokens (user_id, created_at desc);
+create index if not exists password_reset_tokens_expires_at_idx on public.password_reset_tokens (expires_at);
 create index if not exists inspection_schedule_date_idx on public.inspection_schedule (scheduled_date);
 create index if not exists inspection_schedule_item_idx on public.inspection_schedule (order_item_id);
 create index if not exists inspection_schedule_team_date_idx on public.inspection_schedule (team_id, scheduled_date);

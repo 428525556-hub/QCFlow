@@ -1,8 +1,26 @@
 import { supabase } from "@/src/api/client";
+import { isLocalAuthBackend } from "@/src/api/userApi";
 
 type ApiError = { message: string; code?: string; details?: string };
 
 export type ApiResult<T> = ({ data: T; error: null } | { data: null; error: ApiError }) & { requestId?: string };
+
+export async function apiFetch(path: string, init?: RequestInit) {
+  const headers = new Headers(init?.headers);
+  if (!isLocalAuthBackend()) {
+    const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError) throw new Error(sessionError.message);
+    const token = sessionData.session?.access_token;
+    if (!token) throw new Error("Unauthorized");
+    headers.set("Authorization", `Bearer ${token}`);
+  }
+
+  return fetch(path, {
+    ...init,
+    credentials: "same-origin",
+    headers
+  });
+}
 
 async function readApiResult<T>(response: Response): Promise<ApiResult<T>> {
   const requestId = response.headers.get("x-request-id") ?? undefined;
@@ -32,20 +50,12 @@ async function readApiResult<T>(response: Response): Promise<ApiResult<T>> {
 }
 
 export async function apiRequest<T>(path: string, init?: RequestInit): Promise<ApiResult<T>> {
-  const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
-  if (sessionError) return { data: null, error: { message: sessionError.message } };
-
-  const token = sessionData.session?.access_token;
-  if (!token) return { data: null, error: { message: "Unauthorized" } };
-
   try {
-    const response = await fetch(path, {
+    const headers = new Headers(init?.headers);
+    if (!headers.has("Content-Type")) headers.set("Content-Type", "application/json");
+    const response = await apiFetch(path, {
       ...init,
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-        ...init?.headers
-      }
+      headers
     });
     const result = await readApiResult<T>(response);
 
@@ -64,17 +74,10 @@ export async function apiRequest<T>(path: string, init?: RequestInit): Promise<A
 
 /** multipart/form-data 版本的 API 请求（上传文件用） */
 export async function apiRequestForm<T>(path: string, body: FormData): Promise<ApiResult<T>> {
-  const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
-  if (sessionError) return { data: null, error: { message: sessionError.message } };
-
-  const token = sessionData.session?.access_token;
-  if (!token) return { data: null, error: { message: "Unauthorized" } };
-
   try {
-    const response = await fetch(path, {
+    const response = await apiFetch(path, {
       method: "POST",
-      body,
-      headers: { Authorization: `Bearer ${token}` }
+      body
     });
     return await readApiResult<T>(response);
   } catch (error) {

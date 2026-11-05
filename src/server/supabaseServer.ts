@@ -2,9 +2,17 @@ import { createClient } from "@supabase/supabase-js";
 import type { NextRequest } from "next/server";
 
 import { publicEnv } from "@/src/config/env";
+import { getAuthBackend } from "@/src/server/auth/config";
+import { authenticateLocalRequest } from "@/src/server/auth/session";
 import { ApiError } from "@/src/server/errors";
 import { ADMIN_EMAIL } from "@/lib/security";
 import type { Database, UserProfile } from "@/src/types";
+
+export type RequestUser = {
+  id: string;
+  email?: string | null;
+  user_metadata?: Record<string, unknown>;
+};
 
 export function isStaffRole(profile: Pick<UserProfile, "role">) {
   return profile.role === "admin" || profile.role === "staff";
@@ -31,6 +39,9 @@ export function getBearerToken(request: NextRequest) {
 }
 
 export function createRequestSupabaseClient(request: NextRequest) {
+  if (getAuthBackend() === "local") {
+    throw new ApiError("本地认证模式必须使用 DATA_BACKEND=pg", 409, "AUTH_BACKEND_CONFLICT");
+  }
   const token = getBearerToken(request);
 
   return createClient<Database>(publicEnv.supabaseUrl, publicEnv.supabaseAnonKey, {
@@ -46,7 +57,11 @@ export function createRequestSupabaseClient(request: NextRequest) {
   });
 }
 
-export async function requireRequestUser(request: NextRequest) {
+export async function requireRequestUser(request: NextRequest): Promise<RequestUser> {
+  if (getAuthBackend() === "local") {
+    return (await authenticateLocalRequest(request)).user;
+  }
+
   const token = getBearerToken(request);
   if (!token) throw new ApiError("Unauthorized", 401, "UNAUTHORIZED");
 
@@ -58,6 +73,11 @@ export async function requireRequestUser(request: NextRequest) {
 }
 
 export async function requireRequestProfile(request: NextRequest) {
+  if (getAuthBackend() === "local") {
+    const context = await authenticateLocalRequest(request);
+    return { user: context.user, profile: context.profile };
+  }
+
   const user = await requireRequestUser(request);
   const supabase = createRequestSupabaseClient(request);
   const { data, error } = await supabase.from("user_profiles").select("*").eq("id", user.id).maybeSingle();

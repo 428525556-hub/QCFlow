@@ -1,5 +1,4 @@
-import { supabase } from "@/src/api/client";
-import { apiRequest, type ApiResult } from "@/src/api/httpClient";
+import { apiFetch, apiRequest, type ApiResult } from "@/src/api/httpClient";
 import type { ExcelImportRow } from "@/src/utils/excelImport";
 
 export type ImportPreviewData = {
@@ -21,17 +20,13 @@ export type ImportResultData = {
 };
 
 export async function previewExcelImport(file: File): Promise<ApiResult<ImportPreviewData>> {
-  const token = (await supabase.auth.getSession()).data.session?.access_token;
-  if (!token) return { data: null, error: { message: "Unauthorized" } };
-
   const form = new FormData();
   form.append("file", file);
 
   try {
-    const response = await fetch("/api/orders/import/preview", {
+    const response = await apiFetch("/api/orders/import/preview", {
       method: "POST",
-      body: form,
-      headers: { Authorization: `Bearer ${token}` }
+      body: form
     });
     const json = (await response.json()) as ApiResult<ImportPreviewData> & { requestId?: string };
     if (!response.ok && !json.error) {
@@ -48,13 +43,8 @@ export async function confirmExcelImport(rows: ExcelImportRow[]): Promise<ApiRes
 }
 
 export async function downloadImportTemplate(): Promise<{ error?: string }> {
-  const token = (await supabase.auth.getSession()).data.session?.access_token;
-  if (!token) return { error: "Unauthorized" };
-
   try {
-    const response = await fetch("/api/orders/import/template", {
-      headers: { Authorization: `Bearer ${token}` }
-    });
+    const response = await apiFetch("/api/orders/import/template");
     if (!response.ok) return { error: `下载失败（${response.status}）` };
     const blob = await response.blob();
     const url = URL.createObjectURL(blob);

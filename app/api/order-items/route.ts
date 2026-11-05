@@ -14,7 +14,6 @@ type OrderItemInsert = Database["public"]["Tables"]["order_items"]["Insert"];
 
 export const GET = withApiHandler(async (request) => {
   const { profile } = await requireRequestProfile(request);
-  const supabase = createRequestSupabaseClient(request);
   const orderId = request.nextUrl.searchParams.get("orderId");
 
   if (getDataBackend() === "pg") {
@@ -35,6 +34,7 @@ export const GET = withApiHandler(async (request) => {
     return apiSuccess(await listOrderItems({ orderId }));
   }
 
+  const supabase = createRequestSupabaseClient(request);
   let query = supabase.from("order_items").select("*");
 
   if (profile.role === "client") {

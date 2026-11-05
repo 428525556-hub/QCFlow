@@ -1,13 +1,19 @@
 "use client";
 
-import { getCurrentUser, getUserProfile, onAuthStateChange, upsertUserProfile } from "@/src/api/userApi";
+import {
+  getCurrentUser,
+  getUserProfile,
+  isLocalAuthBackend,
+  onAuthStateChange,
+  upsertUserProfile,
+  type AuthUser
+} from "@/src/api/userApi";
 import type { UserProfile } from "@/lib/types";
 import { ADMIN_EMAIL } from "@/lib/security";
-import type { User } from "@supabase/supabase-js";
 import { usePathname, useRouter } from "next/navigation";
 import { createContext, useContext, useEffect, useState } from "react";
 
-const AuthContext = createContext<User | null>(null);
+const AuthContext = createContext<AuthUser | null>(null);
 const ProfileContext = createContext<UserProfile | null>(null);
 
 export function useCurrentUser() {
@@ -29,11 +35,12 @@ function applyRoleRedirects(profile: UserProfile | null, pathname: string, route
 export function AuthGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
-  const [user, setUser] = useState<User | null>(null);
+  const isPublicAuthPath = pathname === "/login" || pathname.startsWith("/login/reset");
+  const [user, setUser] = useState<AuthUser | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
-  async function ensureProfile(currentUser: User | null) {
+  async function ensureProfile(currentUser: AuthUser | null) {
     if (!currentUser) {
       setProfile(null);
       return null;
@@ -43,6 +50,10 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     if (data) {
       setProfile(data as UserProfile);
       return data as UserProfile;
+    }
+    if (isLocalAuthBackend()) {
+      setProfile(null);
+      return null;
     }
 
     const metadata = currentUser.user_metadata ?? {};
@@ -68,16 +79,16 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
       setUser(data.user);
       const nextProfile = await ensureProfile(data.user);
       setLoading(false);
-      if (!data.user && pathname !== "/login") router.replace("/login");
+      if (!data.user && !isPublicAuthPath) router.replace("/login");
       if (data.user && pathname === "/login") router.replace(nextProfile?.role === "client" ? "/client" : nextProfile?.role === "field_inspector" ? "/field" : "/");
       applyRoleRedirects(nextProfile, pathname, router);
     });
 
-    const { data: listener } = onAuthStateChange(async (_event, session) => {
-      setUser(session?.user ?? null);
-      const nextProfile = await ensureProfile(session?.user ?? null);
-      if (!session?.user && pathname !== "/login") router.replace("/login");
-      if (session?.user && pathname === "/login") router.replace(nextProfile?.role === "client" ? "/client" : nextProfile?.role === "field_inspector" ? "/field" : "/");
+    const { data: listener } = onAuthStateChange(async (_event, nextUser) => {
+      setUser(nextUser);
+      const nextProfile = await ensureProfile(nextUser);
+      if (!nextUser && !isPublicAuthPath) router.replace("/login");
+      if (nextUser && pathname === "/login") router.replace(nextProfile?.role === "client" ? "/client" : nextProfile?.role === "field_inspector" ? "/field" : "/");
       applyRoleRedirects(nextProfile, pathname, router);
     });
 
@@ -85,7 +96,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
       mounted = false;
       listener.subscription.unsubscribe();
     };
-  }, [pathname, router]);
+  }, [isPublicAuthPath, pathname, router]);
 
   if (loading) {
     return (
@@ -97,7 +108,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     );
   }
 
-  if (!user && pathname !== "/login") return null;
+  if (!user && !isPublicAuthPath) return null;
 
   return (
     <AuthContext.Provider value={user}>
