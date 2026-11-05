@@ -10,6 +10,10 @@ type Handler<TContext> = (request: NextRequest, context: TContext, requestId: st
 async function attachRequestId(response: NextResponse, requestId: string) {
   const headers = new Headers(response.headers);
   headers.set("x-request-id", requestId);
+  const contentType = response.headers.get("content-type") ?? "";
+  if (!contentType.includes("application/json")) {
+    return new NextResponse(response.body, { status: response.status, headers });
+  }
   let body: Record<string, unknown>;
 
   try {
