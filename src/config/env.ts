@@ -4,6 +4,7 @@ type PublicEnv = {
 };
 
 export type AuthBackend = "supabase" | "local";
+export type StorageBackend = "supabase" | "cos";
 
 function requireEnv(name: string, value: string | undefined): string {
   if (!value) {
@@ -20,4 +21,12 @@ export const publicEnv: PublicEnv = {
 
 export const publicAuthBackend: AuthBackend =
   process.env.NEXT_PUBLIC_AUTH_BACKEND === "local" ? "local" : "supabase";
+
+export const publicStorageBackend: StorageBackend =
+  process.env.NEXT_PUBLIC_STORAGE_BACKEND === "cos" ? "cos" : "supabase";
+
+export const publicCosUrls = {
+  "inspection-photos": process.env.NEXT_PUBLIC_COS_INSPECTION_PHOTOS_BASE_URL?.replace(/\/+$/, "") ?? "",
+  "order-attachments": process.env.NEXT_PUBLIC_COS_ORDER_ATTACHMENTS_BASE_URL?.replace(/\/+$/, "") ?? ""
+} as const;
 

@@ -15,5 +15,10 @@ export const supabaseStorage: StorageAdapter = {
 
   getPublicUrl(bucket: string, path: string) {
     return supabase.storage.from(bucket).getPublicUrl(path).data.publicUrl;
+  },
+
+  async delete(bucket: string, path: string) {
+    const { error } = await supabase.storage.from(bucket).remove([path]);
+    if (error) throw error;
   }
 };

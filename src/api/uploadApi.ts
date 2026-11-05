@@ -1,9 +1,19 @@
-import { publicEnv } from "@/src/config/env";
+import { publicCosUrls, publicEnv, publicStorageBackend } from "@/src/config/env";
 
 import { apiRequestForm } from "./httpClient";
 
 /** 生成 Storage 公开访问地址（路径已由调用方清洗，保持与 Supabase getPublicUrl 一致） */
 export function getStoragePublicUrl(bucket: string, path: string) {
+  if (publicStorageBackend === "cos") {
+    const base = publicCosUrls[bucket as keyof typeof publicCosUrls];
+    if (!base) throw new Error(`缺少 COS 公共访问域名配置：${bucket}`);
+    const encoded = path
+      .replace(/^\/+/, "")
+      .split("/")
+      .map((part) => encodeURIComponent(part))
+      .join("/");
+    return `${base}/${encoded}`;
+  }
   const base = publicEnv.supabaseUrl.replace(/\/+$/, "");
   return `${base}/storage/v1/object/public/${bucket}/${path}`;
 }

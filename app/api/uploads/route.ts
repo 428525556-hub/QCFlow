@@ -1,5 +1,6 @@
 import { apiSuccess } from "@/src/server/apiResponse";
 import { withApiHandler } from "@/src/server/apiHandler";
+import { getStorageAdapter, getStorageBackend } from "@/src/server/storage";
 import { ApiError } from "@/src/server/errors";
 import { createRequestSupabaseClient, requireRequestProfile } from "@/src/server/supabaseServer";
 
@@ -24,6 +25,17 @@ export const POST = withApiHandler(async (request) => {
     throw new ApiError("path is invalid", 400, "VALIDATION_ERROR");
   }
 
+  if (getStorageBackend() === "cos") {
+    const result = await getStorageAdapter().upload({
+      bucket,
+      path,
+      file,
+      contentType: file.type || undefined,
+      cacheControl: "3600"
+    });
+    return apiSuccess({ path: result.path, url: result.url }, 201);
+  }
+
   const supabase = createRequestSupabaseClient(request);
   const { error } = await supabase.storage.from(bucket).upload(path, file, {
     cacheControl: "3600",
@@ -31,7 +43,6 @@ export const POST = withApiHandler(async (request) => {
     contentType: file.type || undefined
   });
   if (error) throw new ApiError(error.message, 400, "UPLOAD_FAILED");
-
   const url = supabase.storage.from(bucket).getPublicUrl(path).data.publicUrl;
   return apiSuccess({ path, url }, 201);
 });
