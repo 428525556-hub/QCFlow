@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - "restore/**"
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: test-anon-key
+      NEXT_PUBLIC_AUTH_BACKEND: local
+      AUTH_BACKEND: local
+      NEXT_PUBLIC_STORAGE_BACKEND: cos
+      STORAGE_BACKEND: cos
+      DATA_BACKEND: pg
+      NEXT_PUBLIC_COS_INSPECTION_PHOTOS_BASE_URL: https://inspection.example.com
+      NEXT_PUBLIC_COS_ORDER_ATTACHMENTS_BASE_URL: https://attachments.example.com
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.25.0
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm test
+      - run: pnpm build
