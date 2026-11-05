@@ -56,7 +56,8 @@ export const cosStorage: StorageAdapter = {
         Body: body,
         ContentLength: body.length,
         ContentType: contentType || "application/octet-stream",
-        CacheControl: `public, max-age=${Math.max(0, Number(cacheControl) || 3600)}`
+        CacheControl: `public, max-age=${Math.max(0, Number(cacheControl) || 3600)}`,
+        Headers: { "x-cos-forbid-overwrite": "true" }
       });
     } catch {
       throw new ApiError("文件上传到 COS 失败", 502, "STORAGE_UPLOAD_FAILED");

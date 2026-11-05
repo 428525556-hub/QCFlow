@@ -121,7 +121,7 @@ async function main() {
     throw new Error("存在无法识别的旧存储 URL，已中止，未修改数据库");
   }
 
-  const client = new Client({ connectionString: process.env.DATABASE_URL });
+  const client = new Client({ connectionString: requiredEnv("DATABASE_URL") });
   await client.connect();
   try {
     await client.query("begin");
