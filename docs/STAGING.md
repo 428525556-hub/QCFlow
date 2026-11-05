@@ -47,3 +47,15 @@ ssh -i C:\Users\pc\.ssh\qcflow_deploy_key -N -L 9443:127.0.0.1:9443 root@124.221
 ```
 
 浏览器打开 `http://127.0.0.1:9443`。
+
+## 首次管理员密码
+
+数据导入后，现有管理员没有 Supabase 密码哈希。用受限脚本设置 staging 密码：
+
+```powershell
+$env:DATABASE_URL = "<staging-database-url>"
+$env:STAGING_ADMIN_PASSWORD = "<local-staging-password>"
+node scripts/set-local-password.mjs --email shuoyuqc@163.com --apply
+```
+
+密码只写入本地忽略环境文件，不输出到终端或 Git。
