@@ -1,0 +1,70 @@
+name: qcflow-staging
+
+services:
+  qcflow-staging:
+    build:
+      context: .
+      args:
+        NEXT_PUBLIC_SUPABASE_URL: ${STAGING_NEXT_PUBLIC_SUPABASE_URL}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${STAGING_NEXT_PUBLIC_SUPABASE_ANON_KEY}
+        NEXT_PUBLIC_AUTH_BACKEND: local
+        NEXT_PUBLIC_STORAGE_BACKEND: cos
+        NEXT_PUBLIC_COS_INSPECTION_PHOTOS_BASE_URL: ${STAGING_COS_INSPECTION_PHOTOS_BASE_URL}
+        NEXT_PUBLIC_COS_ORDER_ATTACHMENTS_BASE_URL: ${STAGING_COS_ORDER_ATTACHMENTS_BASE_URL}
+    image: qcflow:staging
+    container_name: qcflow-staging
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:9443:3000"
+    environment:
+      AUTH_BACKEND: local
+      JWT_SECRET: ${STAGING_JWT_SECRET}
+      AUTH_COOKIE_SECURE: ${STAGING_AUTH_COOKIE_SECURE:-false}
+      AUTH_BASE_URL: ${STAGING_AUTH_BASE_URL:-http://127.0.0.1:9443}
+      ADMIN_EMAIL: ${STAGING_ADMIN_EMAIL}
+      DATA_BACKEND: pg
+      DATABASE_URL: ${STAGING_DATABASE_URL}
+      STORAGE_BACKEND: cos
+      COS_SECRET_ID: ${STAGING_COS_SECRET_ID}
+      COS_SECRET_KEY: ${STAGING_COS_SECRET_KEY}
+      COS_REGION: ${STAGING_COS_REGION}
+      COS_BUCKET_INSPECTION_PHOTOS: ${STAGING_COS_BUCKET_INSPECTION_PHOTOS}
+      COS_BUCKET_ORDER_ATTACHMENTS: ${STAGING_COS_BUCKET_ORDER_ATTACHMENTS}
+      COS_INSPECTION_PHOTOS_BASE_URL: ${STAGING_COS_INSPECTION_PHOTOS_BASE_URL}
+      COS_ORDER_ATTACHMENTS_BASE_URL: ${STAGING_COS_ORDER_ATTACHMENTS_BASE_URL}
+      SMTP_HOST: ${STAGING_SMTP_HOST:-}
+      SMTP_PORT: ${STAGING_SMTP_PORT:-465}
+      SMTP_SECURE: ${STAGING_SMTP_SECURE:-true}
+      SMTP_USER: ${STAGING_SMTP_USER:-}
+      SMTP_PASS: ${STAGING_SMTP_PASS:-}
+      SMTP_FROM: ${STAGING_SMTP_FROM:-}
+    depends_on:
+      qcflow-staging-pg:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/login').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+  qcflow-staging-pg:
+    image: postgres:16-alpine
+    container_name: qcflow-staging-pg
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: qcflow
+      POSTGRES_PASSWORD: ${STAGING_PG_PASSWORD}
+      POSTGRES_DB: qcflow
+    volumes:
+      - qcflow_staging_pgdata:/var/lib/postgresql/data
+      - ./supabase/production_schema.sql:/docker-entrypoint-initdb.d/001-qcflow-schema.sql:ro
+    ports:
+      - "127.0.0.1:5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U qcflow -d qcflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  qcflow_staging_pgdata:

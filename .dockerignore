@@ -8,5 +8,6 @@ out
 .codex
 work
 outputs
+deploy-bundle
 *.log
 tsconfig.tsbuildinfo
