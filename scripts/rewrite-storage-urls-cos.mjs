@@ -39,18 +39,23 @@ async function readTable(runDir, table) {
   return Array.isArray(rows) ? rows : [];
 }
 
-function resolveNewUrl(oldUrl, objectPath, bases) {
+function proxyUrl(bucket, objectPath) {
+  const query = new URLSearchParams({ bucket, path: objectPath.replace(/^\/+/, "") });
+  return `/api/storage/object?${query.toString()}`;
+}
+
+function resolveNewUrl(oldUrl, objectPath, oldBase) {
   if (!oldUrl || !objectPath) return null;
-  if (oldUrl.startsWith(`${bases.old}/storage/v1/object/public/inspection-photos/`)) {
-    return `${bases.inspection}/${encodePath(objectPath)}`;
+  if (oldUrl.startsWith(`${oldBase}/storage/v1/object/public/inspection-photos/`)) {
+    return proxyUrl("inspection-photos", objectPath);
   }
-  if (oldUrl.startsWith(`${bases.old}/storage/v1/object/public/order-attachments/`)) {
-    return `${bases.attachments}/${encodePath(objectPath)}`;
+  if (oldUrl.startsWith(`${oldBase}/storage/v1/object/public/order-attachments/`)) {
+    return proxyUrl("order-attachments", objectPath);
   }
   return null;
 }
 
-function collectUpdates(rows, bases, definition) {
+function collectUpdates(rows, oldBase, definition) {
   const updates = [];
   let unknown = 0;
   for (const row of rows) {
@@ -58,7 +63,7 @@ function collectUpdates(rows, bases, definition) {
       const oldUrl = row[field.url];
       const objectPath = row[field.path];
       if (!oldUrl && !objectPath) continue;
-      const newUrl = resolveNewUrl(oldUrl, objectPath, bases);
+      const newUrl = resolveNewUrl(oldUrl, objectPath, oldBase);
       if (!newUrl) {
         unknown += 1;
         continue;
@@ -73,11 +78,6 @@ function collectUpdates(rows, bases, definition) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
-  const bases = {
-    old: args.oldBase,
-    inspection: requiredEnv("COS_INSPECTION_PHOTOS_BASE_URL"),
-    attachments: requiredEnv("COS_ORDER_ATTACHMENTS_BASE_URL")
-  };
   const definitions = [
     {
       table: "inspection_records",
@@ -104,7 +104,7 @@ async function main() {
   const plans = [];
   for (const definition of definitions) {
     const rows = await readTable(args.runDir, definition.table);
-    plans.push({ definition, ...collectUpdates(rows, bases, definition) });
+    plans.push({ definition, ...collectUpdates(rows, args.oldBase, definition) });
   }
 
   const totalUpdates = plans.reduce((sum, plan) => sum + plan.updates.length, 0);

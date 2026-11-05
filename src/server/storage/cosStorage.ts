@@ -3,11 +3,10 @@ import "server-only";
 import COS from "cos-nodejs-sdk-v5";
 
 import { ApiError } from "@/src/server/errors";
+import { buildPrivateStorageUrl } from "@/src/utils/storageUrl";
 import {
-  encodeObjectPath,
   getCosBucket,
   getCosConfig,
-  getCosPublicBaseUrl,
   type LogicalBucket
 } from "./config";
 import type { StorageAdapter, StorageUploadInput } from "./types";
@@ -39,7 +38,7 @@ function assertPath(path: string) {
 }
 
 function buildPublicUrl(bucket: LogicalBucket, path: string) {
-  return `${getCosPublicBaseUrl(bucket)}/${encodeObjectPath(assertPath(path))}`;
+  return buildPrivateStorageUrl(bucket, assertPath(path));
 }
 
 export const cosStorage: StorageAdapter = {
@@ -82,6 +81,24 @@ export const cosStorage: StorageAdapter = {
       });
     } catch {
       throw new ApiError("删除 COS 文件失败", 502, "STORAGE_DELETE_FAILED");
+    }
+  },
+
+  async download(bucket: string, path: string) {
+    assertBucket(bucket);
+    const key = assertPath(path);
+    try {
+      const result = await getClient().getObject({
+        Bucket: getCosBucket(bucket),
+        Region: getCosConfig().Region,
+        Key: key
+      });
+      return {
+        body: Buffer.isBuffer(result.Body) ? result.Body : Buffer.from(result.Body),
+        contentType: result.headers?.["content-type"] ?? null
+      };
+    } catch {
+      throw new ApiError("读取 COS 文件失败", 404, "STORAGE_NOT_FOUND");
     }
   }
 };

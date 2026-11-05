@@ -20,4 +20,5 @@ export interface StorageAdapter {
   upload(input: StorageUploadInput): Promise<StorageUploadResult>;
   getPublicUrl(bucket: string, path: string): string;
   delete(bucket: string, path: string): Promise<void>;
+  download(bucket: string, path: string): Promise<{ body: Buffer; contentType: string | null }>;
 }
