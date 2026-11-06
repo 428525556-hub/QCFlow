@@ -18,17 +18,26 @@ export const GET = withApiHandler(async (request) => {
   const params = request.nextUrl.searchParams;
   const orderId = params.get("orderId");
   const ascending = params.get("ascending") === "true";
+  const isCustomerScoped = profile.role === "client" || profile.role === "field_inspector";
 
   if (getDataBackend() === "pg") {
     let orderIds: string[] | undefined;
 
-    if (profile.role === "field_inspector") {
+    if (isCustomerScoped) {
       if (orderId) {
         const order = await getOrderById(orderId);
-        if (!order) throw new ApiError("Order not found", 404, "NOT_FOUND");
-        if (order.customer_name !== profile.customer_name) throw new ApiError("Forbidden", 403, "FORBIDDEN");
+        if (!order || order.deleted_at !== null) throw new ApiError("Order not found", 404, "NOT_FOUND");
+        if (
+          order.customer_name !== profile.customer_name ||
+          (profile.role === "field_inspector" && order.inspection_plan !== "field")
+        ) {
+          throw new ApiError("Forbidden", 403, "FORBIDDEN");
+        }
       } else {
-        const allowedOrders = await listOrders({ customerName: profile.customer_name ?? "" });
+        const allowedOrders = await listOrders({
+          customerName: profile.customer_name ?? "",
+          inspectionPlan: profile.role === "field_inspector" ? "field" : null
+        });
         if (allowedOrders.length === 0) return apiSuccess([]);
         orderIds = allowedOrders.map((order) => order.id);
       }
@@ -41,19 +50,37 @@ export const GET = withApiHandler(async (request) => {
   const supabase = createRequestSupabaseClient(request);
   let query = supabase.from("reinspection_records").select("*");
   if (orderId) query = query.eq("order_id", orderId);
-  if (profile.role === "field_inspector") {
-    query = query.eq("inspection_stage", "field");
+  if (isCustomerScoped) {
     if (orderId) {
-      const { data: order, error: orderError } = await supabase.from("orders").select("customer_name").eq("id", orderId).single();
+      const { data: order, error: orderError } = await supabase
+        .from("orders")
+        .select("customer_name, inspection_plan")
+        .eq("id", orderId)
+        .is("deleted_at", null)
+        .single();
       if (orderError) throw databaseError(orderError, orderError.code === "PGRST116" ? 404 : 400);
-      if (order.customer_name !== profile.customer_name) throw new ApiError("Forbidden", 403, "FORBIDDEN");
+      if (
+        order.customer_name !== profile.customer_name ||
+        (profile.role === "field_inspector" && order.inspection_plan !== "field")
+      ) {
+        throw new ApiError("Forbidden", 403, "FORBIDDEN");
+      }
     } else {
-      const { data: allowedOrders, error: ordersError } = await supabase.from("orders").select("id").eq("customer_name", profile.customer_name ?? "").is("deleted_at", null);
+      let allowedQuery = supabase
+        .from("orders")
+        .select("id")
+        .eq("customer_name", profile.customer_name ?? "")
+        .is("deleted_at", null);
+      if (profile.role === "field_inspector") allowedQuery = allowedQuery.eq("inspection_plan", "field");
+      const { data: allowedOrders, error: ordersError } = await allowedQuery;
       if (ordersError) throw databaseError(ordersError);
       const allowedOrderIds = (allowedOrders ?? []).map((order) => order.id);
       if (allowedOrderIds.length === 0) return apiSuccess([]);
       query = query.in("order_id", allowedOrderIds);
     }
+  }
+  if (profile.role === "field_inspector") {
+    query = query.eq("inspection_stage", "field");
   }
 
   const { data, error } = await query.order("created_at", { ascending });

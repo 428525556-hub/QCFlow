@@ -15,12 +15,17 @@ type Context = { params: { id: string } };
 
 export const GET = withApiHandler<Context>(async (request, { params }) => {
   const { profile } = await requireRequestProfile(request);
+  const isCustomerScoped = profile.role === "client" || profile.role === "field_inspector";
 
   if (getDataBackend() === "pg") {
-    const includeDeleted = request.nextUrl.searchParams.get("includeDeleted") === "true";
+    const includeDeleted =
+      !isCustomerScoped && request.nextUrl.searchParams.get("includeDeleted") === "true";
     const order = await getOrderById(params.id);
     if (!order || (!includeDeleted && order.deleted_at !== null)) {
       throw new ApiError("Order not found", 404, "NOT_FOUND");
+    }
+    if (profile.role === "client" && order.customer_name !== profile.customer_name) {
+      throw new ApiError("Forbidden", 403, "FORBIDDEN");
     }
     if (
       profile.role === "field_inspector" &&
@@ -33,10 +38,13 @@ export const GET = withApiHandler<Context>(async (request, { params }) => {
 
   const supabase = createRequestSupabaseClient(request);
   let query = supabase.from("orders").select("*").eq("id", params.id);
-  if (request.nextUrl.searchParams.get("includeDeleted") !== "true") query = query.is("deleted_at", null);
+  const includeDeleted =
+    !isCustomerScoped && request.nextUrl.searchParams.get("includeDeleted") === "true";
+  if (!includeDeleted) query = query.is("deleted_at", null);
 
   const { data, error } = await query.single();
   if (error) throw databaseError(error, error.code === "PGRST116" ? 404 : 400);
+  if (profile.role === "client" && data.customer_name !== profile.customer_name) throw new ApiError("Forbidden", 403, "FORBIDDEN");
   if (profile.role === "field_inspector" && (data.customer_name !== profile.customer_name || data.inspection_plan !== "field")) throw new ApiError("Forbidden", 403, "FORBIDDEN");
   return apiSuccess(data);
 });

@@ -48,6 +48,16 @@ ssh -i C:\Users\pc\.ssh\qcflow_deploy_key -N -L 9443:127.0.0.1:9443 root@124.221
 
 浏览器打开 `http://127.0.0.1:9443`。
 
+## 权限回归
+
+先建立 `9443` 和 `5433` 两个 SSH 隧道，再执行：
+
+```powershell
+node scripts/smoke-permissions-staging.mjs
+```
+
+脚本会临时创建客户与外勤账号，验证跨客户订单、检品和二次检品访问会被拒绝，并在结束时清理测试账号。
+
 ## 首次管理员密码
 
 数据导入后，现有管理员没有 Supabase 密码哈希。用受限脚本设置 staging 密码：
