@@ -17,7 +17,8 @@
 - `SMTP_HOST`、`SMTP_PORT`、`SMTP_SECURE`、`SMTP_USER`、`SMTP_PASS`、`SMTP_FROM`：SMTP 模式配置。
 - `TENCENT_SES_SECRET_ID`、`TENCENT_SES_SECRET_KEY`、`TENCENT_SES_REGION`、`TENCENT_SES_FROM_EMAIL`、`TENCENT_SES_TEMPLATE_ID`：腾讯云 SES API 模式配置。
 
-腾讯云 SES 模板必须包含变量 `{{reset_url}}`。API 模式不需要发信地址的 SMTP 密码。
+腾讯云 SES 模板必须使用固定域名链接，且仅将令牌作为变量，例如
+`https://syqcflow.cn/login/reset?token={{reset_token}}`。API 模式不需要发信地址的 SMTP 密码。
 
 ## 数据库变更
 

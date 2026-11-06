@@ -59,12 +59,11 @@ function requireTencentSesConfig() {
     throw new ApiError("密码重置邮件服务尚未配置", 503, "EMAIL_NOT_CONFIGURED");
   }
 
-  return { secretId, secretKey, region, from, templateId, baseUrl: baseUrl() };
+  return { secretId, secretKey, region, from, templateId };
 }
 
 async function sendWithTencentSes(input: { email: string; token: string }): Promise<void> {
   const config = requireTencentSesConfig();
-  const resetUrl = `${config.baseUrl}/login/reset?token=${encodeURIComponent(input.token)}`;
   const client = new tencentcloud.ses.v20201002.Client({
     credential: { secretId: config.secretId, secretKey: config.secretKey },
     region: config.region,
@@ -76,7 +75,7 @@ async function sendWithTencentSes(input: { email: string; token: string }): Prom
     Subject: "QCFlow 密码重置",
     Template: {
       TemplateID: config.templateId,
-      TemplateData: JSON.stringify({ reset_url: resetUrl })
+      TemplateData: JSON.stringify({ reset_token: input.token })
     },
     TriggerType: 1
   };
