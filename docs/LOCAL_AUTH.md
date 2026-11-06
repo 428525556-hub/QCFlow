@@ -13,7 +13,11 @@
 - `JWT_SECRET`：至少 32 位随机值，仅服务端保存。
 - `AUTH_COOKIE_SECURE=true`：正式 HTTPS 环境必须保持 true。
 - `AUTH_BASE_URL`：密码重置邮件中使用的正式域名。
-- `SMTP_HOST`、`SMTP_PORT`、`SMTP_SECURE`、`SMTP_USER`、`SMTP_PASS`、`SMTP_FROM`：密码重置邮件配置。
+- `EMAIL_PROVIDER`：`smtp` 或 `tencent-ses`。
+- `SMTP_HOST`、`SMTP_PORT`、`SMTP_SECURE`、`SMTP_USER`、`SMTP_PASS`、`SMTP_FROM`：SMTP 模式配置。
+- `TENCENT_SES_SECRET_ID`、`TENCENT_SES_SECRET_KEY`、`TENCENT_SES_REGION`、`TENCENT_SES_FROM_EMAIL`、`TENCENT_SES_TEMPLATE_ID`：腾讯云 SES API 模式配置。
+
+腾讯云 SES 模板必须包含变量 `{{reset_url}}`。API 模式不需要发信地址的 SMTP 密码。
 
 ## 数据库变更
 

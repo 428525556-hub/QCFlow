@@ -1,18 +1,34 @@
 import "server-only";
 
 import nodemailer from "nodemailer";
+import * as tencentcloud from "tencentcloud-sdk-nodejs-ses";
+import type { SendEmailRequest } from "tencentcloud-sdk-nodejs-ses/tencentcloud/services/ses/v20201002/ses_models";
 
 import { ApiError } from "@/src/server/errors";
 
-function requireEmailConfig() {
+type EmailProvider = "smtp" | "tencent-ses";
+
+function getEmailProvider(): EmailProvider {
+  const configured = process.env.EMAIL_PROVIDER?.trim().toLowerCase();
+  if (configured === "tencent-ses") return "tencent-ses";
+  if (configured === "smtp") return "smtp";
+  return process.env.TENCENT_SES_SECRET_ID?.trim() ? "tencent-ses" : "smtp";
+}
+
+function baseUrl() {
+  const value = process.env.AUTH_BASE_URL?.trim().replace(/\/+$/, "");
+  if (!value) throw new ApiError("密码重置邮件服务尚未配置", 503, "EMAIL_NOT_CONFIGURED");
+  return value;
+}
+
+function requireSmtpConfig() {
   const host = process.env.SMTP_HOST?.trim();
   const port = Number(process.env.SMTP_PORT ?? 465);
   const user = process.env.SMTP_USER?.trim();
   const pass = process.env.SMTP_PASS;
   const from = process.env.SMTP_FROM?.trim() || user;
-  const baseUrl = process.env.AUTH_BASE_URL?.trim().replace(/\/+$/, "");
 
-  if (!host || !Number.isInteger(port) || port <= 0 || !user || !pass || !from || !baseUrl) {
+  if (!host || !Number.isInteger(port) || port <= 0 || !user || !pass || !from) {
     throw new ApiError("密码重置邮件服务尚未配置", 503, "EMAIL_NOT_CONFIGURED");
   }
 
@@ -22,12 +38,58 @@ function requireEmailConfig() {
     secure: process.env.SMTP_SECURE !== "false",
     auth: { user, pass },
     from,
-    baseUrl
+    baseUrl: baseUrl()
   };
 }
 
-export async function sendPasswordResetEmail(input: { email: string; token: string }): Promise<void> {
-  const config = requireEmailConfig();
+function requireTencentSesConfig() {
+  const secretId = process.env.TENCENT_SES_SECRET_ID?.trim();
+  const secretKey = process.env.TENCENT_SES_SECRET_KEY?.trim();
+  const region = process.env.TENCENT_SES_REGION?.trim() || "ap-guangzhou";
+  const from = process.env.TENCENT_SES_FROM_EMAIL?.trim();
+  const templateId = Number(process.env.TENCENT_SES_TEMPLATE_ID);
+
+  if (
+    !secretId ||
+    !secretKey ||
+    !from ||
+    !Number.isInteger(templateId) ||
+    templateId <= 0
+  ) {
+    throw new ApiError("密码重置邮件服务尚未配置", 503, "EMAIL_NOT_CONFIGURED");
+  }
+
+  return { secretId, secretKey, region, from, templateId, baseUrl: baseUrl() };
+}
+
+async function sendWithTencentSes(input: { email: string; token: string }): Promise<void> {
+  const config = requireTencentSesConfig();
+  const resetUrl = `${config.baseUrl}/login/reset?token=${encodeURIComponent(input.token)}`;
+  const client = new tencentcloud.ses.v20201002.Client({
+    credential: { secretId: config.secretId, secretKey: config.secretKey },
+    region: config.region,
+    profile: { httpProfile: { endpoint: "ses.tencentcloudapi.com" } }
+  });
+  const request: SendEmailRequest = {
+    FromEmailAddress: config.from,
+    Destination: [input.email],
+    Subject: "QCFlow 密码重置",
+    Template: {
+      TemplateID: config.templateId,
+      TemplateData: JSON.stringify({ reset_url: resetUrl })
+    },
+    TriggerType: 1
+  };
+
+  try {
+    await client.SendEmail(request);
+  } catch {
+    throw new ApiError("密码重置邮件发送失败，请稍后重试", 503, "EMAIL_SEND_FAILED");
+  }
+}
+
+async function sendWithSmtp(input: { email: string; token: string }): Promise<void> {
+  const config = requireSmtpConfig();
   const resetUrl = `${config.baseUrl}/login/reset?token=${encodeURIComponent(input.token)}`;
   const transport = nodemailer.createTransport({
     host: config.host,
@@ -47,4 +109,12 @@ export async function sendPasswordResetEmail(input: { email: string; token: stri
   } catch {
     throw new ApiError("密码重置邮件发送失败，请稍后重试", 503, "EMAIL_SEND_FAILED");
   }
+}
+
+export async function sendPasswordResetEmail(input: { email: string; token: string }): Promise<void> {
+  if (getEmailProvider() === "tencent-ses") {
+    await sendWithTencentSes(input);
+    return;
+  }
+  await sendWithSmtp(input);
 }
